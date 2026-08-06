@@ -1,0 +1,210 @@
+/* ═══════════════════════════════════════════════════════
+   SIGNAL Design Language — desktop app tokens
+
+   Ported verbatim from the production app's setup surface
+   (omnideck/desktop/src/setup/setup.css in the monorepo, mirrored at
+   wireframes/uploads/setup.css in this repo). Do not invent new colors,
+   spacing, or radii here — see AGENT.md's "Visual design" convention.
+   ═══════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Light mode ("Blueprint") is the default ── */
+  --canvas: #f8f9fb;
+  --surface: #eef0f5;
+  --elevated: #ffffff;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --border-strong: #cbd5e1;
+
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-muted: rgba(37, 99, 235, 0.08);
+  --accent-glow: rgba(37, 99, 235, 0.15);
+
+  --success: #16a34a;
+  --success-muted: rgba(22, 163, 74, 0.08);
+  --warning: #d97706;
+  --warning-muted: rgba(217, 119, 6, 0.08);
+  --danger: #dc2626;
+  --danger-muted: rgba(220, 38, 38, 0.08);
+
+  --scrim: rgba(15, 23, 42, 0.4);
+
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md:
+    0 2px 8px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-lg:
+    0 4px 16px rgba(15, 23, 42, 0.1), 0 2px 4px rgba(15, 23, 42, 0.05);
+  --shadow-glow: 0 0 0 3px var(--accent-glow);
+
+  --terminal-bg: #edf1fb;
+  --terminal-surface: #e2e9f7;
+  --terminal-border: #c8d4ec;
+  --terminal-text: #1e293b;
+  --terminal-comment: #8898b5;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 999px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  --font-brand: "Roboto Mono", "Consolas", monospace;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-code: "JetBrains Mono", "Fira Mono", "Consolas", monospace;
+
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  color-scheme: light dark;
+}
+
+/* ── Dark mode ("Terminal") ── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #0c0e14;
+    --surface: #151821;
+    --elevated: #1e2130;
+
+    --text-primary: #e8ecf4;
+    --text-secondary: #8892a8;
+    --text-tertiary: #4a5168;
+
+    --border: #252a3a;
+    --border-subtle: #1a1e2a;
+    --border-strong: #363d52;
+
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-muted: rgba(59, 130, 246, 0.12);
+    --accent-glow: rgba(59, 130, 246, 0.2);
+
+    --success: #4ade80;
+    --success-muted: rgba(74, 222, 128, 0.12);
+    --warning: #fbbf24;
+    --warning-muted: rgba(251, 191, 36, 0.12);
+    --danger: #f87171;
+    --danger-muted: rgba(248, 113, 113, 0.12);
+
+    --scrim: rgba(0, 0, 0, 0.6);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+    --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+
+    --terminal-bg: #111318;
+    --terminal-surface: #1a1d26;
+    --terminal-border: #252a3a;
+    --terminal-text: #c8cdd8;
+    --terminal-comment: #4a5168;
+  }
+}
+
+:root[data-theme="dark"] {
+  --canvas: #0c0e14;
+  --surface: #151821;
+  --elevated: #1e2130;
+
+  --text-primary: #e8ecf4;
+  --text-secondary: #8892a8;
+  --text-tertiary: #4a5168;
+
+  --border: #252a3a;
+  --border-subtle: #1a1e2a;
+  --border-strong: #363d52;
+
+  --accent: #3b82f6;
+  --accent-hover: #60a5fa;
+  --accent-muted: rgba(59, 130, 246, 0.12);
+  --accent-glow: rgba(59, 130, 246, 0.2);
+
+  --success: #4ade80;
+  --success-muted: rgba(74, 222, 128, 0.12);
+  --warning: #fbbf24;
+  --warning-muted: rgba(251, 191, 36, 0.12);
+  --danger: #f87171;
+  --danger-muted: rgba(248, 113, 113, 0.12);
+
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+
+  --terminal-bg: #111318;
+  --terminal-surface: #1a1d26;
+  --terminal-border: #252a3a;
+  --terminal-text: #c8cdd8;
+  --terminal-comment: #4a5168;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Base
+   ═══════════════════════════════════════════════════════ */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  overflow: hidden;
+  background: var(--canvas);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-full);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+  }
+}

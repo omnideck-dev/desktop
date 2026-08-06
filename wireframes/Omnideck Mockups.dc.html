@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  body { margin: 0; }
+</style>
+</helmet>
+
+<div style="width:100%;min-height:100vh;background:{{ col.desk }};display:flex;flex-direction:column;align-items:center;padding:36px 24px;font-family:{{ fontBody }};box-sizing:border-box;">
+
+  <div style="width:1200px;max-width:100%;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div style="color:{{ col.deskText }};font:600 11px/1 {{ fontBrand }};letter-spacing:.14em;">OMNIDECK — DESKTOP WIREFRAMES</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+      <div style="display:flex;background:{{ col.controlBg }};border:1px solid {{ col.controlBorder }};border-radius:8px;padding:3px;gap:2px;">
+        <button onClick="{{ handlers.setDashScenario_empty }}" style="{{ pillStyle.empty }}">Empty</button>
+        <button onClick="{{ handlers.setDashScenario_populated }}" style="{{ pillStyle.populated }}">Populated</button>
+        <button onClick="{{ handlers.setDashScenario_many }}" style="{{ pillStyle.many }}">Many (12+)</button>
+        <button onClick="{{ handlers.setDashScenario_engine }}" style="{{ pillStyle.engine }}">Engine down</button>
+      </div>
+      <button onClick="{{ handlers.toggleAdvLog }}" style="{{ ctrlBtnStyle }}">Adv. log drawer</button>
+      <button onClick="{{ handlers.toggleTheme }}" style="{{ ctrlBtnStyle }}">{{ themeLabel }}</button>
+    </div>
+  </div>
+
+  <div style="width:1200px;height:800px;max-width:100%;background:{{ col.elevated }};border:1px solid {{ col.border }};border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35),0 4px 16px rgba(0,0,0,.2);overflow:hidden;position:relative;display:flex;flex-direction:column;">
+
+    <div style="display:flex;flex-direction:column;height:100%;">
+
+      <div style="height:34px;flex:none;display:flex;align-items:center;padding:0 14px;background:{{ col.titlebar }};border-bottom:1px solid {{ col.border }};">
+        <div style="display:flex;gap:7px;">
+          <div style="width:11px;height:11px;border-radius:50%;background:#ec6a5e;"></div>
+          <div style="width:11px;height:11px;border-radius:50%;background:#f4bf4f;"></div>
+          <div style="width:11px;height:11px;border-radius:50%;background:#61c454;"></div>
+        </div>
+      </div>
+
+      <div style="height:48px;flex:none;display:flex;align-items:center;gap:4px;padding:0 12px;background:{{ col.surface }};border-bottom:1px solid {{ col.border }};">
+        <div style="display:flex;align-items:center;gap:8px;padding-right:10px;margin-right:6px;border-right:1px solid {{ col.border }};">
+          <div style="width:22px;height:22px;border-radius:6px;background:{{ col.accent }};display:flex;align-items:flex-end;justify-content:center;gap:2px;padding:4px;">
+            <span style="width:2px;height:5px;background:#fff;border-radius:2px;"></span>
+            <span style="width:2px;height:10px;background:#fff;border-radius:2px;"></span>
+            <span style="width:2px;height:7px;background:#fff;border-radius:2px;"></span>
+          </div>
+          <span style="color:{{ col.textSecondary }};font:600 11px/1 {{ fontBrand }};letter-spacing:.1em;">omnideck</span>
+        </div>
+
+        <button onClick="{{ handlers.goDashboard }}" style="{{ navBtnStyle.dashboard }}">Dashboard</button>
+
+        <sc-for list="{{ visibleTabs }}" as="tab" hint-placeholder-count="0">
+          <button onClick="{{ tab.activate }}" style="{{ tab.style }}">
+            <span style="width:6px;height:6px;border-radius:50%;background:{{ tab.dotColor }};flex:none;"></span>
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:110px;">{{ tab.name }}</span>
+            <span onClick="{{ tab.close }}" style="margin-left:2px;color:{{ col.textTertiary }};font-size:13px;line-height:1;padding:2px;border-radius:4px;">×</span>
+          </button>
+        </sc-for>
+
+        <sc-if value="{{ hasOverflowTabs }}" hint-placeholder-val="{{ false }}">
+          <div style="position:relative;">
+            <button onClick="{{ handlers.toggleTabOverflow }}" style="{{ navBtnStyle.plain }}">+{{ overflowCount }} more</button>
+            <sc-if value="{{ tabOverflowOpen }}" hint-placeholder-val="{{ false }}">
+              <div style="position:absolute;top:34px;left:0;background:{{ col.elevated }};border:1px solid {{ col.border }};border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:4px;min-width:160px;z-index:30;">
+                <sc-for list="{{ overflowTabs }}" as="tab" hint-placeholder-count="0">
+                  <button onClick="{{ tab.activate }}" style="width:100%;text-align:left;background:transparent;border:none;padding:7px 9px;border-radius:6px;color:{{ col.textPrimary }};font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:7px;">
+                    <span style="width:6px;height:6px;border-radius:50%;background:{{ tab.dotColor }};"></span>{{ tab.name }}
+                  </button>
+                </sc-for>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <div style="flex:1;"></div>
+        <button style="{{ navBtnStyle.plain }}">Help ↗</button>
+        <button style="{{ navBtnStyle.plain }}">Community ↗</button>
+        <button onClick="{{ handlers.goSettings }}" style="{{ navBtnStyle.settings }}">Settings</button>
+      </div>
+
+      <div style="flex:1;min-height:0;position:relative;background:{{ col.canvas }};">
+
+        <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+          <div style="height:100%;display:flex;flex-direction:column;">
+            <div style="flex:none;padding:22px 28px 14px;display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:baseline;gap:10px;">
+                <h1 style="margin:0;font-size:22px;font-weight:600;color:{{ col.textPrimary }};letter-spacing:-.01em;">Decks</h1>
+                <sc-if value="{{ showLiveDot }}" hint-placeholder-val="{{ false }}">
+                  <span style="display:flex;align-items:center;gap:5px;color:{{ col.textTertiary }};font:500 10px {{ fontBrand }};letter-spacing:.1em;">
+                    <span style="width:6px;height:6px;border-radius:50%;background:{{ col.success }};animation:pulse 2s ease-in-out infinite;"></span>LIVE
+                  </span>
+                </sc-if>
+              </div>
+              <button onClick="{{ handlers.openNewDeck }}" style="min-height:36px;padding:0 16px;border:none;border-radius:6px;background:{{ col.accent }};color:#fff;font:500 13px {{ fontBody }};cursor:pointer;">+ New Deck</button>
+            </div>
+
+            <sc-if value="{{ showEngineBanner }}" hint-placeholder-val="{{ false }}">
+              <div style="flex:none;margin:0 28px 14px;padding:11px 14px;display:flex;align-items:center;gap:10px;background:{{ col.dangerMuted }};border:1px solid {{ col.danger }};border-radius:8px;">
+                <span style="color:{{ col.danger }};font-weight:700;">!</span>
+                <span style="flex:1;color:{{ col.textPrimary }};font-size:13px;">Container engine unreachable — podman/docker may have stopped. Showing last-known state.</span>
+                <button style="min-height:28px;padding:0 12px;border:1px solid {{ col.border }};border-radius:6px;background:{{ col.elevated }};color:{{ col.textSecondary }};font-size:12px;cursor:pointer;">Retry</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ isEmptyDash }}" hint-placeholder-val="{{ false }}">
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:{{ col.textSecondary }};">
+                <div style="width:64px;height:64px;border-radius:16px;background:{{ col.surface }};border:1px dashed {{ col.borderStrong }};"></div>
+                <div style="font-size:15px;font-weight:600;color:{{ col.textPrimary }};">No Decks yet</div>
+                <div style="font-size:13px;max-width:280px;text-align:center;line-height:1.5;">Create your first Deck to start running omnideck locally.</div>
+                <button onClick="{{ handlers.openNewDeck }}" style="min-height:36px;padding:0 18px;border:none;border-radius:6px;background:{{ col.accent }};color:#fff;font:500 13px {{ fontBody }};cursor:pointer;">+ New Deck</button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ hasRows }}" hint-placeholder-val="{{ false }}">
+              <div style="flex:1;min-height:0;overflow:auto;padding:0 28px 20px;opacity:{{ tableOpacity }};">
+                <div style="border:1px solid {{ col.border }};border-radius:10px;overflow:hidden;min-width:908px;">
+                <div style="display:grid;grid-template-columns:110px minmax(140px,1.6fr) 70px 150px 90px 70px 100px 168px;gap:0;min-width:908px;">
+                  <div style="display:contents;">
+                    <div style="{{ headCellStyle }}">Status</div>
+                    <div style="{{ headCellStyle }}">Name</div>
+                    <div style="{{ headCellStyle }}">CPU</div>
+                    <div style="{{ headCellStyle }}">RAM</div>
+                    <div style="{{ headCellStyle }}">Uptime</div>
+                    <div style="{{ headCellStyle }}">Restarts</div>
+                    <div style="{{ headCellStyle }}">Health</div>
+                    <div style="{{ headCellStyle }}"></div>
+                  </div>
+                  <sc-for list="{{ rows }}" as="r" hint-placeholder-count="5">
+                    <div style="display:contents;">
+                      <div onClick="{{ r.openInUi }}" style="{{ r.cellStyle }}"><span style="display:flex;align-items:center;gap:7px;"><span style="width:8px;height:8px;border-radius:50%;background:{{ r.statusColor }};flex:none;"></span>{{ r.statusLabel }}</span></div>
+                      <div onClick="{{ r.openInUi }}" style="{{ r.cellStyle }}color:{{ col.textPrimary }};font-weight:500;">{{ r.name }}</div>
+                      <div onClick="{{ r.openInUi }}" style="{{ r.cellStyleMuted }}">{{ r.cpuDisplay }}</div>
+                      <div onClick="{{ r.openInUi }}" style="{{ r.cellStyleMuted }}">{{ r.ramDisplay }}</div>
+                      <div onClick="{{ r.openInUi }}" style="{{ r.cellStyleMuted }}">{{ r.uptimeDisplay }}</div>
+                      <div onClick="{{ r.openInUi }}" style="{{ r.cellStyleMuted }}">{{ r.restartsDisplay }}</div>
+                      <div onClick="{{ r.openInUi }}" style="{{ r.cellStyle }}color:{{ r.healthColor }};">{{ r.healthLabel }}</div>
+                      <div style="{{ r.cellStyle }}position:relative;justify-content:flex-end;gap:4px;cursor:default;">
+                        <button onClick="{{ r.openDetailBtn }}" title="Details" style="{{ iconBtnStyle }}">ⓘ</button>
+                        <button onClick="{{ r.toggleStartStop }}" title="{{ r.startStopLabel }}" style="{{ iconBtnStyle }}">{{ r.playPauseGlyph }}</button>
+                        <button onClick="{{ r.stopClick }}" disabled="{{ r.updateDisabled }}" style="{{ r.updateBtnStyle }}">Update</button>
+                        <button onClick="{{ r.toggleKebab }}" style="{{ iconBtnStyle }}">⋮</button>
+                        <sc-if value="{{ r.kebabOpen }}" hint-placeholder-val="{{ false }}">
+                          <div style="position:absolute;top:30px;right:6px;background:{{ col.elevated }};border:1px solid {{ col.border }};border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:4px;min-width:130px;z-index:20;text-align:left;">
+                            <button onClick="{{ r.openLogs }}" style="{{ menuItemStyle }}">Logs</button>
+                            <div style="height:1px;background:{{ col.borderSubtle }};margin:3px 2px;"></div>
+                            <button onClick="{{ r.openRemove }}" style="{{ menuItemStyleDanger }}">Remove…</button>
+                          </div>
+                        </sc-if>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%;overflow:auto;padding:26px 32px;">
+            <h1 style="margin:0 0 20px;font-size:20px;font-weight:600;color:{{ col.textPrimary }};">Settings</h1>
+
+            <div style="{{ settingsCardStyle }}">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div>
+                  <div style="font-size:13.5px;font-weight:600;color:{{ col.textPrimary }};">Advanced logging</div>
+                  <div style="font-size:12px;color:{{ col.textSecondary }};margin-top:2px;">Show raw stdout/stderr from the CLI process in a drawer, reachable from any screen.</div>
+                </div>
+                <button onClick="{{ handlers.toggleAdvLog }}" style="{{ toggleSwitchStyle.advLog }}"><span style="{{ toggleKnobStyle.advLog }}"></span></button>
+              </div>
+            </div>
+
+            <div style="{{ settingsCardStyle }}">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <div style="font-size:13.5px;font-weight:600;color:{{ col.textPrimary }};">CLI version</div>
+                <span style="padding:3px 8px;border-radius:5px;background:{{ col.successMuted }};color:{{ col.success }};font:600 10.5px {{ fontBrand }};letter-spacing:.06em;">CONTRACT OK</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;font-size:12.5px;">
+                <div><span style="color:{{ col.textTertiary }};">Version</span><div style="color:{{ col.textPrimary }};font-family:{{ fontCode }};">1.9.4</div></div>
+                <div><span style="color:{{ col.textTertiary }};">Contract</span><div style="color:{{ col.textPrimary }};font-family:{{ fontCode }};">v3</div></div>
+                <div><span style="color:{{ col.textTertiary }};">Commit</span><div style="color:{{ col.textPrimary }};font-family:{{ fontCode }};">c71e0af</div></div>
+                <div><span style="color:{{ col.textTertiary }};">Date</span><div style="color:{{ col.textPrimary }};font-family:{{ fontCode }};">2026-07-30</div></div>
+              </div>
+            </div>
+
+            <div style="{{ settingsCardStyle }}">
+              <div style="font-size:13.5px;font-weight:600;color:{{ col.textPrimary }};margin-bottom:4px;">Migration from Electron app</div>
+              <div style="font-size:12px;color:{{ col.textSecondary }};">Already migrated — legacy data was imported and verified on Jul 30.</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isWebview }}" hint-placeholder-val="{{ false }}">
+          <div style="height:100%;display:flex;flex-direction:column;">
+            <sc-if value="{{ activeTabValid }}" hint-placeholder-val="{{ false }}">
+              <div style="flex:none;height:32px;display:flex;align-items:center;gap:8px;padding:0 14px;background:{{ col.surface }};border-bottom:1px solid {{ col.border }};color:{{ col.textTertiary }};font-size:11px;font-family:{{ fontCode }};">http://127.0.0.1:{{ activeTabPort }}</div>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;">
+                <sc-if value="{{ webviewRefused }}" hint-placeholder-val="{{ false }}">
+                  <div style="text-align:center;color:{{ col.textSecondary }};">
+                    <div style="font-size:15px;font-weight:600;color:{{ col.textPrimary }};margin-bottom:6px;">Can't reach this Deck</div>
+                    <div style="font-size:13px;">It may have been stopped or removed while this tab was open.</div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ webviewLoaded }}" hint-placeholder-val="{{ true }}">
+                  <div style="width:100%;height:100%;background:repeating-linear-gradient(135deg,{{ col.surface }},{{ col.surface }} 10px,{{ col.canvas }} 10px,{{ col.canvas }} 20px);display:flex;align-items:center;justify-content:center;">
+                    <span style="color:{{ col.textTertiary }};font:500 12px {{ fontCode }};">deck web UI — out of scope for this wireframe</span>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;background:{{ col.scrim }};z-index:15;" onClick="{{ handlers.closeModal }}"></div>
+          <div style="position:absolute;top:0;right:0;bottom:0;width:420px;background:{{ col.elevated }};border-left:1px solid {{ col.border }};box-shadow:-8px 0 24px rgba(0,0,0,.12);z-index:16;display:flex;flex-direction:column;">
+            <div style="flex:none;padding:18px 20px;border-bottom:1px solid {{ col.border }};display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:8px;"><span style="width:8px;height:8px;border-radius:50%;background:{{ detail.statusColor }};"></span><span style="font-size:15px;font-weight:600;color:{{ col.textPrimary }};">{{ detail.name }}</span></div>
+              <button onClick="{{ handlers.closeModal }}" style="width:26px;height:26px;border:none;background:transparent;color:{{ col.textSecondary }};font-size:16px;cursor:pointer;">×</button>
+            </div>
+            <div style="flex:none;display:flex;gap:2px;padding:10px 20px 0;">
+              <button onClick="{{ handlers.detailTabOverview }}" style="{{ detailTabStyle.overview }}">Overview</button>
+              <button onClick="{{ handlers.detailTabLogs }}" style="{{ detailTabStyle.logs }}">Logs</button>
+            </div>
+            <div style="flex:1;min-height:0;overflow:auto;padding:16px 20px 20px;">
+              <sc-if value="{{ isDetailOverview }}" hint-placeholder-val="{{ true }}">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;margin-bottom:18px;">
+                  <div><span style="{{ statLabelStyle }}">CPU</span><div style="{{ statValueStyle }}">{{ detail.cpuDisplay }}</div></div>
+                  <div><span style="{{ statLabelStyle }}">RAM</span><div style="{{ statValueStyle }}">{{ detail.ramDisplay }}</div></div>
+                  <div><span style="{{ statLabelStyle }}">Uptime</span><div style="{{ statValueStyle }}">{{ detail.uptimeDisplay }}</div></div>
+                  <div><span style="{{ statLabelStyle }}">Restarts</span><div style="{{ statValueStyle }}">{{ detail.restartsDisplay }}</div></div>
+                  <div><span style="{{ statLabelStyle }}">Image</span><div style="{{ statValueStyle }}font-size:11.5px;font-family:{{ fontCode }};">{{ detail.image }}</div></div>
+                  <div><span style="{{ statLabelStyle }}">Port</span><div style="{{ statValueStyle }}">{{ detail.webUiPort }}</div></div>
+                </div>
+                <div style="font:600 10.5px {{ fontBrand }};letter-spacing:.1em;color:{{ col.textSecondary }};margin-bottom:8px;">DIAGNOSTICS</div>
+                <sc-for list="{{ detail.checks }}" as="chk" hint-placeholder-count="3">
+                  <div style="display:grid;grid-template-columns:16px 1fr;gap:8px;padding:6px 0;">
+                    <span style="width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 9px {{ fontBrand }};color:{{ chk.iconColor }};background:{{ chk.iconBg }};">{{ chk.glyph }}</span>
+                    <div>
+                      <div style="font-size:12.5px;color:{{ col.textPrimary }};">{{ chk.label }}</div>
+                      <sc-if value="{{ chk.hasDetail }}" hint-placeholder-val="{{ false }}"><div style="font-size:11.5px;color:{{ col.textSecondary }};margin-top:1px;">{{ chk.detail }}</div></sc-if>
+                    </div>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ detail.needsRepair }}" hint-placeholder-val="{{ false }}">
+                  <button style="margin-top:12px;width:100%;min-height:36px;border:none;border-radius:6px;background:{{ col.accent }};color:#fff;font:500 13px {{ fontBody }};cursor:pointer;">Repair Deck</button>
+                </sc-if>
+              </sc-if>
+              <sc-if value="{{ isDetailLogs }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                  <select style="height:28px;border:1px solid {{ col.border }};border-radius:6px;background:{{ col.surface }};color:{{ col.textPrimary }};font-size:12px;padding:0 6px;"><option>Last 200 lines</option></select>
+                  <div style="flex:1;"></div>
+                  <button style="height:28px;padding:0 10px;border:1px solid {{ col.border }};border-radius:6px;background:transparent;color:{{ col.textSecondary }};font-size:11.5px;cursor:pointer;">Copy</button>
+                  <button style="height:28px;padding:0 10px;border:1px solid {{ col.border }};border-radius:6px;background:{{ col.accentMuted }};color:{{ col.accent }};font-size:11.5px;cursor:pointer;">● Live</button>
+                </div>
+                <div style="background:{{ col.terminalBg }};border:1px solid {{ col.terminalBorder }};border-radius:8px;padding:10px;font:11.5px/1.6 {{ fontCode }};color:{{ col.terminalText }};max-height:360px;overflow:auto;">
+                  <sc-for list="{{ logLines }}" as="ln" hint-placeholder-count="6">
+                    <div><span style="color:{{ col.terminalComment }};">{{ ln.ts }}</span> {{ ln.text }}</div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ isFormModal }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;background:{{ col.scrim }};z-index:15;display:flex;align-items:center;justify-content:center;" onClick="{{ handlers.closeModalBg }}">
+            <div style="width:440px;max-height:92%;overflow:auto;background:{{ col.elevated }};border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.3);padding:24px;" onClick="{{ handlers.stop }}">
+
+              <sc-if value="{{ isNewDeck }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                  <h2 style="margin:0;font-size:16px;font-weight:600;color:{{ col.textPrimary }};">New Deck</h2>
+                  <div style="display:flex;gap:2px;background:{{ col.surface }};border-radius:6px;padding:2px;">
+                    <button onClick="{{ handlers.ndStageForm }}" style="{{ devPillStyle.form }}">Form</button>
+                    <button onClick="{{ handlers.ndStageSubmitting }}" style="{{ devPillStyle.submitting }}">Submitting</button>
+                    <button onClick="{{ handlers.ndStageSuccess }}" style="{{ devPillStyle.success }}">Success</button>
+                    <button onClick="{{ handlers.ndStageError }}" style="{{ devPillStyle.error }}">Error</button>
+                  </div>
+                </div>
+
+                <sc-if value="{{ ndIsForm }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:grid;gap:14px;">
+                    <label style="display:grid;gap:5px;">
+                      <span style="{{ fieldLabelStyle }}">NAME</span>
+                      <input type="text" defaultValue="deck-04" style="{{ inputStyle }}" />
+                    </label>
+                    <label style="display:grid;gap:5px;">
+                      <span style="{{ fieldLabelStyle }}">PORT</span>
+                      <input type="text" defaultValue="8093" style="{{ inputStyle }}" />
+                      <span style="font-size:11px;color:{{ col.textTertiary }};">1–65535, must not already be in use.</span>
+                    </label>
+                    <label style="display:grid;gap:5px;">
+                      <span style="{{ fieldLabelStyle }}">IMAGE OVERRIDE (OPTIONAL)</span>
+                      <input type="text" placeholder="omnideck/deck:2.4.1" style="{{ inputStyle }}" />
+                    </label>
+                    <label style="display:grid;gap:5px;">
+                      <span style="{{ fieldLabelStyle }}">MEMORY OVERRIDE (OPTIONAL)</span>
+                      <input type="text" placeholder="2g" style="{{ inputStyle }}" />
+                    </label>
+                    <button onClick="{{ handlers.ndStageSubmitting }}" style="min-height:38px;border:none;border-radius:6px;background:{{ col.accent }};color:#fff;font:500 13px {{ fontBody }};cursor:pointer;margin-top:4px;">Create Deck</button>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ ndIsSubmitting }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:grid;gap:10px;">
+                    <sc-for list="{{ ndSteps }}" as="st" hint-placeholder-count="6">
+                      <div style="display:grid;grid-template-columns:18px 1fr auto;gap:9px;align-items:center;">
+                        <span style="{{ st.iconStyle }}">{{ st.glyph }}</span>
+                        <span style="font-size:12.5px;color:{{ st.textColor }};">{{ st.label }}</span>
+                        <span style="font-size:11px;color:{{ col.textTertiary }};font-family:{{ fontCode }};">{{ st.detail }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ ndIsSuccess }}" hint-placeholder-val="{{ false }}">
+                  <div style="text-align:center;padding:16px 0 6px;">
+                    <div style="width:44px;height:44px;margin:0 auto 12px;border-radius:50%;background:{{ col.successMuted }};color:{{ col.success }};display:flex;align-items:center;justify-content:center;font-size:20px;">✓</div>
+                    <div style="font-size:15px;font-weight:600;color:{{ col.textPrimary }};margin-bottom:4px;">deck-04 created</div>
+                    <div style="font-size:12.5px;color:{{ col.textSecondary }};margin-bottom:16px;">Running on port 8093.</div>
+                    <button onClick="{{ handlers.closeModal }}" style="min-height:36px;padding:0 20px;border:none;border-radius:6px;background:{{ col.accent }};color:#fff;font:500 13px {{ fontBody }};cursor:pointer;">Done</button>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ ndIsError }}" hint-placeholder-val="{{ false }}">
+                  <div>
+                    <div style="font-size:13.5px;font-weight:600;color:{{ col.danger }};margin-bottom:6px;">Couldn't pull image</div>
+                    <div style="font-size:12.5px;color:{{ col.textSecondary }};line-height:1.55;margin-bottom:10px;">The container engine reported an error while pulling omnideck/deck:2.4.1. Nothing was created.</div>
+                    <details style="margin-bottom:14px;"><summary style="font-size:11.5px;color:{{ col.textSecondary }};cursor:pointer;">Technical details</summary>
+                      <pre style="margin:8px 0 0;padding:9px;background:{{ col.terminalBg }};border:1px solid {{ col.terminalBorder }};border-radius:6px;color:{{ col.terminalText }};font:10.5px/1.5 {{ fontCode }};white-space:pre-wrap;">Error response from daemon: manifest unknown</pre>
+                    </details>
+                    <div style="display:flex;gap:8px;">
+                      <button onClick="{{ handlers.ndStageForm }}" style="flex:1;min-height:36px;border:none;border-radius:6px;background:{{ col.accent }};color:#fff;font:500 13px {{ fontBody }};cursor:pointer;">Retry</button>
+                      <button onClick="{{ handlers.closeModal }}" style="flex:1;min-height:36px;border:1px solid {{ col.border }};border-radius:6px;background:transparent;color:{{ col.textSecondary }};font:500 13px {{ fontBody }};cursor:pointer;">Cancel</button>
+                    </div>
+                  </div>
+                </sc-if>
+              </sc-if>
+
+              <sc-if value="{{ isRemove }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                  <h2 style="margin:0;font-size:16px;font-weight:600;color:{{ col.textPrimary }};">Remove {{ removeTargetName }}</h2>
+                  <div style="display:flex;gap:2px;background:{{ col.surface }};border-radius:6px;padding:2px;">
+                    <button onClick="{{ handlers.rmStageChoice }}" style="{{ devPillStyle.rmChoice }}">Choice</button>
+                    <button onClick="{{ handlers.rmStageProgress }}" style="{{ devPillStyle.rmProgress }}">Progress</button>
+                    <button onClick="{{ handlers.rmStageSuccess }}" style="{{ devPillStyle.rmSuccess }}">Success</button>
+                  </div>
+                </div>
+
+                <sc-if value="{{ rmIsChoice }}" hint-placeholder-val="{{ true }}">
+                  <div style="font-size:12.5px;color:{{ col.textSecondary }};line-height:1.55;margin-bottom:16px;">This stops the Deck. Choose what happens to its data — there is no default.</div>
+                  <div style="display:grid;gap:8px;margin-bottom:14px;">
+                    <button onClick="{{ handlers.rmChooseKeep }}" style="{{ rmChoiceStyle.keep }}">
+                      <div style="font-weight:600;font-size:13px;">Keep volumes</div>
+                      <div style="font-size:11.5px;opacity:.75;margin-top:2px;">Data stays on disk. Re-adding a Deck with the same name reuses it.</div>
+                    </button>
+                    <button onClick="{{ handlers.rmChooseDelete }}" style="{{ rmChoiceStyle.delete }}">
+                      <div style="font-weight:600;font-size:13px;">Delete volumes</div>
+                      <div style="font-size:11.5px;opacity:.75;margin-top:2px;">Home and state data are permanently removed.</div>
+                    </button>
+                  </div>
+                  <sc-if value="{{ rmShowBackupChoice }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:grid;gap:8px;margin-bottom:16px;padding:12px;background:{{ col.warningMuted }};border-radius:8px;">
+                      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:{{ col.textPrimary }};"><input type="radio" name="backup" defaultChecked="{{ true }}" />Back up before deleting</label>
+                      <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:{{ col.textPrimary }};"><input type="radio" name="backup" />Delete without backup</label>
+                    </div>
+                  </sc-if>
+                  <div style="display:flex;gap:8px;">
+                    <button onClick="{{ handlers.rmStageProgress }}" style="flex:1;min-height:36px;border:none;border-radius:6px;background:{{ col.danger }};color:#fff;font:500 13px {{ fontBody }};cursor:pointer;">Remove Deck</button>
+                    <button onClick="{{ handlers.closeModal }}" style="flex:1;min-height:36px;border:1px solid {{ col.border }};border-radius:6px;background:transparent;color:{{ col.textSecondary }};font:500 13px {{ fontBody }};cursor:pointer;">Cancel</button>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ rmIsProgress }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:grid;gap:10px;">
+                    <sc-for list="{{ rmSteps }}" as="st" hint-placeholder-count="4">
+                      <div style="display:grid;grid-template-columns:18px 1fr;gap:9px;align-items:center;">
+                        <span style="{{ st.iconStyle }}">{{ st.glyph }}</span>
+                        <span style="font-size:12.5px;color:{{ st.textColor }};">{{ st.label }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ rmIsSuccess }}" hint-placeholder-val="{{ false }}">
+                  <div style="text-align:center;padding:12px 0 4px;">
+                    <div style="width:44px;height:44px;margin:0 auto 12px;border-radius:50%;background:{{ col.successMuted }};color:{{ col.success }};display:flex;align-items:center;justify-content:center;font-size:20px;">✓</div>
+                    <div style="font-size:15px;font-weight:600;color:{{ col.textPrimary }};margin-bottom:8px;">{{ removeTargetName }} removed</div>
+                    <div style="text-align:left;background:{{ col.surface }};border-radius:8px;padding:10px 12px;margin-bottom:14px;">
+                      <div style="font-size:11px;color:{{ col.textTertiary }};margin-bottom:2px;">BACKUP SAVED TO</div>
+                      <div style="font-size:12px;color:{{ col.textPrimary }};font-family:{{ fontCode }};word-break:break-all;">~/omnideck-backups/{{ removeTargetName }}-2026-08-06.tar.gz</div>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                      <button style="flex:1;min-height:34px;border:1px solid {{ col.border }};border-radius:6px;background:transparent;color:{{ col.textSecondary }};font:500 12.5px {{ fontBody }};cursor:pointer;">Reveal in Finder</button>
+                      <button onClick="{{ handlers.closeModal }}" style="flex:1;min-height:34px;border:none;border-radius:6px;background:{{ col.accent }};color:#fff;font:500 12.5px {{ fontBody }};cursor:pointer;">Done</button>
+                    </div>
+                  </div>
+                </sc-if>
+              </sc-if>
+
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ advLogOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:0;right:0;bottom:0;height:230px;background:{{ col.elevated }};border-top:1px solid {{ col.border }};box-shadow:0 -8px 24px rgba(0,0,0,.1);z-index:12;display:flex;flex-direction:column;">
+            <div style="flex:none;height:38px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid {{ col.border }};">
+              <span style="font:600 11px {{ fontBrand }};letter-spacing:.08em;color:{{ col.textSecondary }};">ADVANCED LOGGING</span>
+              <sc-if value="{{ advLogStreaming }}" hint-placeholder-val="{{ false }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ col.success }};animation:pulse 1.6s ease-in-out infinite;"></span></sc-if>
+              <div style="flex:1;"></div>
+              <button onClick="{{ handlers.advLogToggleStreaming }}" style="height:26px;padding:0 10px;border:1px solid {{ col.border }};border-radius:6px;background:transparent;color:{{ col.textSecondary }};font-size:11px;cursor:pointer;">{{ advLogToggleLabel }}</button>
+              <button style="height:26px;padding:0 10px;border:1px solid {{ col.border }};border-radius:6px;background:transparent;color:{{ col.textSecondary }};font-size:11px;cursor:pointer;">Copy</button>
+              <button onClick="{{ handlers.toggleAdvLog }}" style="width:26px;height:26px;border:none;background:transparent;color:{{ col.textSecondary }};font-size:15px;cursor:pointer;">×</button>
+            </div>
+            <div style="flex:1;overflow:auto;padding:10px 14px;font:11.5px/1.6 {{ fontCode }};color:{{ col.terminalText }};background:{{ col.terminalBg }};">
+              <sc-if value="{{ advLogIdle }}" hint-placeholder-val="{{ true }}"><div style="color:{{ col.textTertiary }};text-align:center;padding-top:40px;">Nothing running</div></sc-if>
+              <sc-if value="{{ advLogStreaming }}" hint-placeholder-val="{{ false }}">
+                <sc-for list="{{ advLogLines }}" as="ln" hint-placeholder-count="6">
+                  <div><span style="color:{{ col.terminalComment }};">{{ ln.ts }}</span> {{ ln.text }}</div>
+                </sc-for>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+
+  <div style="width:1200px;max-width:100%;margin-top:14px;color:{{ col.deskTextMuted }};font-size:11.5px;line-height:1.6;">
+    Window target 1200×800 (min 900×600). Onboarding's 9 reused states + 2 new deltas live in the existing setup-flow harness, not reproduced here. Logs panel is folded into the Instance detail drawer's "Logs" tab (also reachable via row kebab → Logs). Row click opens the Deck's UI; details/play-pause/update/⋮ are separate actions.
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const THEMES = {
+  light: {
+    desk:'#dfe3ea', deskText:'#3a4356', deskTextMuted:'#8b93a6',
+    canvas:'#f8f9fb', surface:'#eef0f5', elevated:'#ffffff', titlebar:'#eef0f5',
+    textPrimary:'#0f172a', textSecondary:'#475569', textTertiary:'#94a3b8',
+    border:'#e2e8f0', borderSubtle:'#f1f5f9', borderStrong:'#cbd5e1',
+    accent:'#2563eb', accentHover:'#1d4ed8', accentMuted:'rgba(37,99,235,.08)',
+    success:'#16a34a', successMuted:'rgba(22,163,74,.08)',
+    warning:'#d97706', warningMuted:'rgba(217,119,6,.08)',
+    danger:'#dc2626', dangerMuted:'rgba(220,38,38,.08)',
+    scrim:'rgba(15,23,42,.4)',
+    terminalBg:'#edf1fb', terminalBorder:'#c8d4ec', terminalText:'#1e293b', terminalComment:'#8898b5',
+    controlBg:'#151821', controlBorder:'#2b3040',
+  },
+  dark: {
+    desk:'#05060a', deskText:'#aab4c6', deskTextMuted:'#5b6479',
+    canvas:'#0c0e14', surface:'#151821', elevated:'#1e2130', titlebar:'#151821',
+    textPrimary:'#e8ecf4', textSecondary:'#8892a8', textTertiary:'#4a5168',
+    border:'#252a3a', borderSubtle:'#1a1e2a', borderStrong:'#363d52',
+    accent:'#3b82f6', accentHover:'#60a5fa', accentMuted:'rgba(59,130,246,.12)',
+    success:'#4ade80', successMuted:'rgba(74,222,128,.12)',
+    warning:'#fbbf24', warningMuted:'rgba(251,191,36,.12)',
+    danger:'#f87171', dangerMuted:'rgba(248,113,113,.12)',
+    scrim:'rgba(0,0,0,.6)',
+    terminalBg:'#111318', terminalBorder:'#252a3a', terminalText:'#c8cdd8', terminalComment:'#4a5168',
+    controlBg:'#0e1016', controlBorder:'#252a3a',
+  }
+};
+const FONT_BODY = "system-ui,-apple-system,'Segoe UI',Roboto,sans-serif";
+const FONT_BRAND = "'Roboto Mono','Consolas',monospace";
+const FONT_CODE = "'JetBrains Mono','Fira Mono','Consolas',monospace";
+
+function baseInstances(){
+  return [
+    {id:'atlas-prod', name:'atlas-prod', status:'running', webUiPort:8081, cpu:34, ram:512, ramTotal:2048, uptime:'2d 4h', restarts:0, health:'healthy', image:'omnideck/deck:2.4.1', updateAvailable:false},
+    {id:'nova-dev', name:'nova-dev', status:'running', webUiPort:8090, cpu:12, ram:256, ramTotal:1024, uptime:'6h 20m', restarts:1, health:'healthy', image:'omnideck/deck:2.4.1', updateAvailable:true},
+    {id:'echo-staging', name:'echo-staging', status:'running', webUiPort:8095, cpu:91, ram:1860, ramTotal:2048, uptime:'11d 2h', restarts:5, health:'unhealthy', image:'omnideck/deck:2.3.0', updateAvailable:false},
+    {id:'sandbox-test', name:'sandbox-test', status:'paused', webUiPort:8092, cpu:null, ram:null, ramTotal:null, uptime:null, restarts:null, health:'', image:'omnideck/deck:2.4.1', updateAvailable:true},
+    {id:'legacy-migrate', name:'legacy-migrate', status:'exited', webUiPort:8100, cpu:null, ram:null, ramTotal:null, uptime:null, restarts:null, health:'', image:'omnideck/deck:2.2.5', updateAvailable:false},
+    {id:'quiet-bot', name:'quiet-bot', status:'unknown', webUiPort:8110, cpu:null, ram:null, ramTotal:null, uptime:null, restarts:null, health:'', image:'omnideck/deck:2.4.1', updateAvailable:false},
+  ];
+}
+function genInstances(scenario){
+  if (scenario === 'empty') return [];
+  if (scenario === 'many') {
+    const list = baseInstances();
+    for (let n = 1; n <= 7; n++) {
+      const stopped = n % 3 === 0;
+      list.push({id:'deck-'+n, name:'deck-'+String(n).padStart(2,'0'),
+        status: stopped ? 'exited' : (n % 4 === 0 ? 'paused' : 'running'),
+        webUiPort: 8200+n, cpu: stopped?null:(10+n*7)%95, ram: stopped?null:200+n*80, ramTotal:2048,
+        uptime: stopped?null:(n+1)+'h '+(n*5)+'m', restarts: stopped?null:(n%2), health: stopped?'':'healthy',
+        image:'omnideck/deck:2.4.1', updateAvailable: n%5===0});
+    }
+    return list;
+  }
+  return baseInstances();
+}
+function statusMeta(status, col){
+  return {
+    running:{label:'Running', color:col.success},
+    exited:{label:'Stopped', color:col.textTertiary},
+    paused:{label:'Paused', color:col.warning},
+    unknown:{label:'Unknown', color:col.textTertiary},
+  }[status];
+}
+function formatInstance(i, col){
+  const sm = statusMeta(i.status, col);
+  const dash = '—';
+  let healthLabel = dash, healthColor = col.textTertiary;
+  if (i.health === 'healthy') { healthLabel='Healthy'; healthColor=col.success; }
+  else if (i.health === 'unhealthy') { healthLabel='Unhealthy'; healthColor=col.danger; }
+  return {
+    ...i,
+    statusLabel: sm.label, statusColor: sm.color,
+    cpuDisplay: i.cpu==null?dash:i.cpu+'%',
+    ramDisplay: i.ram==null?dash:(i.ram+' / '+i.ramTotal+' MB'),
+    uptimeDisplay: i.uptime==null?dash:i.uptime,
+    restartsDisplay: i.restarts==null?dash:String(i.restarts),
+    healthLabel, healthColor,
+    needsRepair: i.health === 'unhealthy',
+    startStopLabel: i.status === 'running' ? 'Stop' : 'Start',
+  };
+}
+function stepIcon(state, col){
+  if (state === 'done') return {glyph:'✓', iconStyle:'width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 9px monospace;color:'+col.success+';background:'+col.successMuted+';', textColor: col.textSecondary};
+  if (state === 'active') return {glyph:'●', iconStyle:'width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 9px monospace;color:'+col.accent+';background:'+col.accentMuted+';', textColor: col.textPrimary};
+  return {glyph:'○', iconStyle:'width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 9px monospace;color:'+col.textTertiary+';background:transparent;', textColor: col.textSecondary};
+}
+
+class Component extends DCLogic {
+  state = {
+    theme: 'light', view: 'dashboard', dashScenario: 'populated',
+    tabs: [], activeTabId: null, tabOverflowOpen: false,
+    kebabOpenFor: null,
+    modal: null, modalTarget: null, detailTab: 'overview',
+    newDeckStage: 'form', removeStage: 'choice', removeChoice: 'keep',
+    advLogOpen: false, advLogStreaming: false,
+    statusOverrides: {},
+  };
+
+  toggleTheme = () => this.setState(s => ({ theme: s.theme === 'light' ? 'dark' : 'light' }));
+  goDashboard = () => this.setState({ view: 'dashboard', tabOverflowOpen: false });
+  goSettings = () => this.setState({ view: 'settings', tabOverflowOpen: false });
+  makeDashScenario = (s) => () => this.setState({ dashScenario: s });
+  toggleAdvLog = () => this.setState(s => ({ advLogOpen: !s.advLogOpen }));
+  noop = () => {};
+  makeToggleStartStop = (id, currentStatus) => (e) => {
+    e && e.stopPropagation && e.stopPropagation();
+    this.setState(s => ({ statusOverrides: { ...s.statusOverrides, [id]: (currentStatus === 'running' ? 'exited' : 'running') } }));
+  };
+  advLogToggleStreaming = () => this.setState(s => ({ advLogStreaming: !s.advLogStreaming }));
+  toggleTabOverflow = () => this.setState(s => ({ tabOverflowOpen: !s.tabOverflowOpen }));
+
+  makeToggleKebab = (id) => (e) => { e && e.stopPropagation && e.stopPropagation(); this.setState(s => ({ kebabOpenFor: s.kebabOpenFor === id ? null : id })); };
+  makeOpenTab = (inst) => () => this.setState(s => {
+    const exists = s.tabs.find(t => t.id === inst.id);
+    const tabs = exists ? s.tabs : [...s.tabs, { id: inst.id, name: inst.name, status: inst.status }];
+    return { tabs, activeTabId: inst.id, view: 'webview', kebabOpenFor: null, tabOverflowOpen: false };
+  });
+  makeSetActiveTab = (id) => () => this.setState({ activeTabId: id, view: 'webview', tabOverflowOpen: false });
+  makeCloseTab = (id) => (e) => { e && e.stopPropagation(); this.setState(s => {
+    const tabs = s.tabs.filter(t => t.id !== id);
+    const activeTabId = s.activeTabId === id ? (tabs[0] ? tabs[0].id : null) : s.activeTabId;
+    return { tabs, activeTabId, view: (s.view === 'webview' && !tabs.length) ? 'dashboard' : s.view };
+  }); };
+
+  makeOpenDetail = (inst) => () => this.setState({ modal: 'detail', modalTarget: inst, detailTab: 'overview', kebabOpenFor: null });
+  makeOpenRemove = (inst) => (e) => { e && e.stopPropagation(); this.setState({ modal: 'remove', modalTarget: inst, removeStage: 'choice', removeChoice: 'keep', kebabOpenFor: null }); };
+  openNewDeck = () => this.setState({ modal: 'newDeck', newDeckStage: 'form' });
+  closeModal = () => this.setState({ modal: null, modalTarget: null });
+  stop = (e) => e && e.stopPropagation();
+  closeModalBg = () => this.setState({ modal: null, modalTarget: null });
+  detailTabOverview = () => this.setState({ detailTab: 'overview' });
+  detailTabLogs = () => this.setState({ detailTab: 'logs' });
+
+  makeNdStage = (s) => () => this.setState({ newDeckStage: s });
+  makeRmStage = (s) => () => this.setState({ removeStage: s });
+  rmChooseKeep = () => this.setState({ removeChoice: 'keep' });
+  rmChooseDelete = () => this.setState({ removeChoice: 'delete' });
+
+  renderVals() {
+    const col = THEMES[this.state.theme];
+    const s = this.state;
+
+    const pillBtn = (active) => 'min-height:26px;padding:0 10px;border:none;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;background:' + (active ? col.accent : 'transparent') + ';color:' + (active ? '#fff' : col.textSecondary) + ';';
+    const pillStyle = {
+      empty: pillBtn(s.dashScenario === 'empty'), populated: pillBtn(s.dashScenario === 'populated'),
+      many: pillBtn(s.dashScenario === 'many'), engine: pillBtn(s.dashScenario === 'engine-unreachable'),
+    };
+    const ctrlBtnStyle = 'min-height:32px;padding:0 12px;border:1px solid ' + col.controlBorder + ';border-radius:8px;background:' + col.controlBg + ';color:' + col.deskText + ';font-size:11.5px;font-weight:600;cursor:pointer;';
+
+    const navBtnBase = (active) => 'min-height:34px;display:flex;align-items:center;gap:6px;padding:0 12px;border:none;border-radius:7px;font-size:12.5px;font-weight:500;cursor:pointer;background:' + (active ? col.accentMuted : 'transparent') + ';color:' + (active ? col.accent : col.textSecondary) + ';';
+    const navBtnStyle = { dashboard: navBtnBase(s.view === 'dashboard'), settings: navBtnBase(s.view === 'settings'), plain: navBtnBase(false) };
+
+    const scenarioRows = genInstances(s.dashScenario === 'engine-unreachable' ? 'populated' : s.dashScenario);
+    const iconBtnStyle = 'width:26px;height:26px;flex:none;border:none;border-radius:6px;background:transparent;color:' + col.textSecondary + ';font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;';
+    const rows = scenarioRows.map(rawBase => {
+      const override = s.statusOverrides[rawBase.id];
+      const raw = override ? { ...rawBase, status: override } : rawBase;
+      const f = formatInstance(raw, col);
+      const isOpen = s.kebabOpenFor === f.id;
+      const cellStyle = 'padding:11px 12px;border-top:1px solid ' + col.borderSubtle + ';font-size:12.5px;color:' + col.textPrimary + ';display:flex;align-items:center;cursor:pointer;background:' + col.elevated + ';';
+      const updateBtnStyle = 'min-height:26px;padding:0 9px;border:none;border-radius:6px;font-size:11px;font-weight:600;flex:none;' +
+        (f.updateAvailable ? ('background:' + col.successMuted + ';color:' + col.success + ';cursor:pointer;') : ('background:transparent;color:' + col.textTertiary + ';cursor:not-allowed;opacity:.6;'));
+      return {
+        ...f, kebabOpen: isOpen,
+        cellStyle, cellStyleMuted: cellStyle + 'color:' + col.textSecondary + ';',
+        openDetail: this.makeOpenDetail(f), openDetailBtn: (e) => { e && e.stopPropagation(); this.makeOpenDetail(f)(); },
+        toggleKebab: this.makeToggleKebab(f.id),
+        openInUi: this.makeOpenTab(f), openLogs: (e) => { e && e.stopPropagation(); this.makeOpenDetail(f)(); this.setState({ detailTab: 'logs' }); },
+        openRemove: this.makeOpenRemove(f),
+        toggleStartStop: this.makeToggleStartStop(f.id, f.status),
+        playPauseGlyph: f.status === 'running' ? '❚❚' : '▶',
+        updateDisabled: !f.updateAvailable, updateBtnStyle,
+        stopClick: this.noop,
+      };
+    });
+
+    const tabsAll = s.tabs.map(t => {
+      const active = t.id === s.activeTabId;
+      return {
+        ...t, dotColor: statusMeta(t.status, col).color,
+        style: 'min-height:34px;max-width:170px;display:flex;align-items:center;gap:6px;padding:0 8px;border:none;border-radius:7px;font-size:12px;font-weight:500;cursor:pointer;background:' + (active ? col.accentMuted : 'transparent') + ';color:' + (active ? col.accent : col.textSecondary) + ';',
+        activate: this.makeSetActiveTab(t.id), close: this.makeCloseTab(t.id),
+      };
+    });
+    const visibleTabs = tabsAll.slice(0, 4);
+    const overflowTabs = tabsAll.slice(4);
+
+    const detailRaw = s.modalTarget;
+    const detail = detailRaw ? { ...formatInstance(detailRaw, col), checks: [
+        { label: 'Container running', hasDetail: false, glyph: '✓', iconColor: col.success, iconBg: col.successMuted },
+        { label: 'Health check endpoint', hasDetail: detailRaw.health === 'unhealthy', detail: 'Health probe timed out 3 times in a row.', glyph: detailRaw.health === 'unhealthy' ? '!' : '✓', iconColor: detailRaw.health === 'unhealthy' ? col.danger : col.success, iconBg: detailRaw.health === 'unhealthy' ? col.dangerMuted : col.successMuted },
+        { label: 'Volumes mounted', hasDetail: false, glyph: '✓', iconColor: col.success, iconBg: col.successMuted },
+      ] } : null;
+
+    const logLines = [
+      { ts: '14:02:11', text: 'GET /api/health 200 4ms' },
+      { ts: '14:02:09', text: 'worker pool: 4/4 idle' },
+      { ts: '14:01:58', text: 'GET /api/sessions 200 12ms' },
+      { ts: '14:01:40', text: 'cache warm complete (1,204 keys)' },
+      { ts: '14:01:22', text: 'listening on :8081' },
+      { ts: '14:01:20', text: 'config loaded from /home/.omnideck/config.json' },
+    ];
+    const advLogLines = [
+      { ts: '14:03:02', text: 'omnideck-cli: list --json' },
+      { ts: '14:03:02', text: 'podman ps --format json (rc=0)' },
+      { ts: '14:02:58', text: 'omnideck-cli: doctor --json atlas-prod' },
+      { ts: '14:02:58', text: '6 checks passed, 0 failed' },
+    ];
+
+    const ndSteps = [
+      { key: 'check_availability', label: 'Check name & port availability' },
+      { key: 'create_home_volume', label: 'Create home volume' },
+      { key: 'create_state_volume', label: 'Create state volume' },
+      { key: 'pull_image', label: 'Pull image', detail: 'Downloading layer 7a3b21… 62%' },
+      { key: 'run_container', label: 'Start container' },
+      { key: 'save_config', label: 'Save configuration' },
+    ].map((st, idx) => {
+      const state = idx < 2 ? 'done' : idx === 2 ? 'active' : 'pending';
+      const ic = stepIcon(state, col);
+      return { ...st, detail: state === 'active' ? (st.detail || '') : '', ...ic };
+    });
+
+    const rmShowBackupChoice = s.removeChoice === 'delete';
+    const rmSteps = ['prepare', 'stop_container', s.removeChoice === 'delete' ? 'backup' : null, 'remove_container', s.removeChoice === 'delete' ? 'delete_volumes' : null]
+      .filter(Boolean)
+      .map((key, idx, arr) => {
+        const labels = { prepare: 'Prepare', stop_container: 'Stop container', backup: 'Back up volumes', remove_container: 'Remove container', delete_volumes: 'Delete volumes' };
+        const state = idx < arr.length - 1 ? 'done' : 'active';
+        return { key, label: labels[key], ...stepIcon(state, col) };
+      });
+
+    const devPill = (active) => 'min-height:22px;padding:0 8px;border:none;border-radius:5px;font-size:10.5px;font-weight:600;cursor:pointer;background:' + (active ? col.elevated : 'transparent') + ';color:' + (active ? col.textPrimary : col.textTertiary) + ';';
+
+    const detailTabBtn = (active) => 'min-height:30px;padding:0 10px;border:none;border-bottom:2px solid ' + (active ? col.accent : 'transparent') + ';background:transparent;color:' + (active ? col.accent : col.textSecondary) + ';font-size:12.5px;font-weight:600;cursor:pointer;';
+
+    return {
+      col, fontBody: FONT_BODY, fontBrand: FONT_BRAND, fontCode: FONT_CODE,
+      themeLabel: s.theme === 'light' ? 'Dark theme' : 'Light theme',
+      handlers: {
+        toggleTheme: this.toggleTheme,
+        toggleAdvLog: this.toggleAdvLog, goDashboard: this.goDashboard, goSettings: this.goSettings,
+        setDashScenario_empty: this.makeDashScenario('empty'), setDashScenario_populated: this.makeDashScenario('populated'),
+        setDashScenario_many: this.makeDashScenario('many'), setDashScenario_engine: this.makeDashScenario('engine-unreachable'),
+        toggleTabOverflow: this.toggleTabOverflow, closeModal: this.closeModal, closeModalBg: this.closeModalBg, stop: this.stop,
+        openNewDeck: this.openNewDeck, detailTabOverview: this.detailTabOverview, detailTabLogs: this.detailTabLogs,
+        ndStageForm: this.makeNdStage('form'), ndStageSubmitting: this.makeNdStage('submitting'), ndStageSuccess: this.makeNdStage('success'), ndStageError: this.makeNdStage('error'),
+        rmStageChoice: this.makeRmStage('choice'), rmStageProgress: this.makeRmStage('progress'), rmStageSuccess: this.makeRmStage('success'),
+        rmChooseKeep: this.rmChooseKeep, rmChooseDelete: this.rmChooseDelete,
+        advLogToggleStreaming: this.advLogToggleStreaming,
+      },
+      pillStyle, ctrlBtnStyle, navBtnStyle, iconBtnStyle,
+      isDashboard: s.view === 'dashboard', isSettings: s.view === 'settings', isWebview: s.view === 'webview',
+      showLiveDot: s.view === 'dashboard' && s.dashScenario !== 'empty' && s.dashScenario !== 'engine-unreachable',
+      showEngineBanner: s.dashScenario === 'engine-unreachable',
+      isEmptyDash: s.dashScenario === 'empty',
+      hasRows: s.dashScenario !== 'empty',
+      tableOpacity: s.dashScenario === 'engine-unreachable' ? '0.55' : '1',
+      headCellStyle: 'padding:9px 12px;font:600 10px ' + FONT_BRAND + ';letter-spacing:.08em;color:' + col.textSecondary + ';background:' + col.surface + ';text-transform:uppercase;',
+      rows,
+      menuItemStyle: 'width:100%;text-align:left;background:transparent;border:none;padding:7px 9px;border-radius:6px;color:' + col.textPrimary + ';font-size:12.5px;cursor:pointer;',
+      menuItemStyleDanger: 'width:100%;text-align:left;background:transparent;border:none;padding:7px 9px;border-radius:6px;color:' + col.danger + ';font-size:12.5px;cursor:pointer;',
+      visibleTabs, overflowTabs, hasOverflowTabs: overflowTabs.length > 0, overflowCount: overflowTabs.length, tabOverflowOpen: s.tabOverflowOpen,
+      activeTabValid: s.activeTabId != null, activeTabPort: (s.tabs.find(t => t.id === s.activeTabId) || {}).id,
+      webviewLoaded: s.activeTabId != null, webviewRefused: false,
+      settingsCardStyle: 'padding:16px 18px;background:' + col.elevated + ';border:1px solid ' + col.border + ';border-radius:10px;margin-bottom:14px;',
+      toggleSwitchStyle: { advLog: 'width:40px;height:22px;border-radius:11px;border:none;padding:2px;cursor:pointer;background:' + (s.advLogOpen ? col.accent : col.borderStrong) + ';display:flex;justify-content:' + (s.advLogOpen ? 'flex-end' : 'flex-start') + ';' },
+      toggleKnobStyle: { advLog: 'width:16px;height:16px;border-radius:50%;background:#fff;display:block;' },
+      isDetail: s.modal === 'detail', detail: detail || {},
+      isDetailOverview: s.detailTab === 'overview', isDetailLogs: s.detailTab === 'logs',
+      detailTabStyle: { overview: detailTabBtn(s.detailTab === 'overview'), logs: detailTabBtn(s.detailTab === 'logs') },
+      statLabelStyle: 'font-size:10px;font-weight:600;letter-spacing:.06em;color:' + col.textTertiary + ';text-transform:uppercase;',
+      statValueStyle: 'font-size:13.5px;color:' + col.textPrimary + ';margin-top:2px;',
+      logLines, advLogLines,
+      isFormModal: s.modal === 'newDeck' || s.modal === 'remove',
+      isNewDeck: s.modal === 'newDeck', isRemove: s.modal === 'remove',
+      fieldLabelStyle: 'font:600 10px ' + FONT_BRAND + ';letter-spacing:.08em;color:' + col.textSecondary + ';',
+      inputStyle: 'height:36px;padding:0 10px;border:1px solid ' + col.border + ';border-radius:6px;background:' + col.surface + ';color:' + col.textPrimary + ';font-size:13px;',
+      ndIsForm: s.newDeckStage === 'form', ndIsSubmitting: s.newDeckStage === 'submitting', ndIsSuccess: s.newDeckStage === 'success', ndIsError: s.newDeckStage === 'error',
+      ndSteps,
+      devPillStyle: {
+        form: devPill(s.newDeckStage === 'form'), submitting: devPill(s.newDeckStage === 'submitting'), success: devPill(s.newDeckStage === 'success'), error: devPill(s.newDeckStage === 'error'),
+        rmChoice: devPill(s.removeStage === 'choice'), rmProgress: devPill(s.removeStage === 'progress'), rmSuccess: devPill(s.removeStage === 'success'),
+      },
+      removeTargetName: (s.modalTarget || {}).name || 'this-deck',
+      rmIsChoice: s.removeStage === 'choice', rmIsProgress: s.removeStage === 'progress', rmIsSuccess: s.removeStage === 'success',
+      rmShowBackupChoice, rmSteps,
+      rmChoiceStyle: {
+        keep: 'text-align:left;padding:11px 12px;border-radius:8px;cursor:pointer;border:1.5px solid ' + (s.removeChoice === 'keep' ? col.accent : col.border) + ';background:' + (s.removeChoice === 'keep' ? col.accentMuted : 'transparent') + ';color:' + col.textPrimary + ';',
+        delete: 'text-align:left;padding:11px 12px;border-radius:8px;cursor:pointer;border:1.5px solid ' + (s.removeChoice === 'delete' ? col.danger : col.border) + ';background:' + (s.removeChoice === 'delete' ? col.dangerMuted : 'transparent') + ';color:' + col.textPrimary + ';',
+      },
+      advLogOpen: s.advLogOpen, advLogIdle: !s.advLogStreaming, advLogStreaming: s.advLogStreaming,
+      advLogToggleLabel: s.advLogStreaming ? 'Stop' : 'Simulate stream',
+    };
+  }
+}
+</script>
+</body>
+</html>
