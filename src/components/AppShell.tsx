@@ -1,22 +1,27 @@
 import type { ReactNode } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 
-export type View = "dashboard" | "settings";
+export type InstanceTab = { name: string; port: string };
+export type View = "dashboard" | "settings" | "help" | "community" | `instance:${string}`;
 
-// TODO(product): no real docs/Slack URL exists anywhere in this repo or the
-// CLI repo yet — these are placeholders so Help/Community are wired up
-// end-to-end (external open, never in-window) but not yet pointed
-// anywhere real. Swap in real URLs once they exist; don't guess them.
-const HELP_URL = "https://omnideck.dev/docs";
-const COMMUNITY_URL = "https://omnideck.dev/community";
+export const HELP_URL = "https://www.omnideck.dev/docs/";
+export const COMMUNITY_URL =
+  "https://join.slack.com/t/omnideckcommunity/shared_invite/zt-43pog9zx2-i0CojjlIjyqvVSdGg4bLHg";
+
+export function instanceView(name: string): View {
+  return `instance:${name}`;
+}
 
 export default function AppShell({
   view,
   onViewChange,
+  openTabs,
+  onCloseTab,
   children,
 }: {
   view: View;
   onViewChange: (view: View) => void;
+  openTabs: InstanceTab[];
+  onCloseTab: (name: string) => void;
   children: ReactNode;
 }) {
   return (
@@ -38,15 +43,39 @@ export default function AppShell({
           Dashboard
         </button>
 
-        {/* Open instance tabs land here once "Open UI" is wired up
-            (DESIGN.md #1/#7) — no tabs to render yet in this pass. */}
+        {openTabs.map((tab) => (
+          <span
+            key={tab.name}
+            className={`app-nav__tab ${view === instanceView(tab.name) ? "is-active" : ""}`}
+          >
+            <button className="app-nav__tab-label" onClick={() => onViewChange(instanceView(tab.name))}>
+              {tab.name}
+            </button>
+            <button
+              className="app-nav__tab-close"
+              aria-label={`Close ${tab.name} tab`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCloseTab(tab.name);
+              }}
+            >
+              ×
+            </button>
+          </span>
+        ))}
 
         <div className="app-nav__spacer" />
 
-        <button className="app-nav__item" onClick={() => openUrl(HELP_URL)}>
+        <button
+          className={`app-nav__item ${view === "help" ? "is-active" : ""}`}
+          onClick={() => onViewChange("help")}
+        >
           Help
         </button>
-        <button className="app-nav__item" onClick={() => openUrl(COMMUNITY_URL)}>
+        <button
+          className={`app-nav__item ${view === "community" ? "is-active" : ""}`}
+          onClick={() => onViewChange("community")}
+        >
           Community
         </button>
         <button

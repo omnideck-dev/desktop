@@ -29,6 +29,83 @@ export interface ListEntry {
   created: string;
 }
 
+export interface VolumeStatus {
+  name: string;
+  exists: boolean;
+}
+
+export interface OllamaStatus {
+  reachable: boolean;
+  host: string;
+}
+
+/** `status --json`, also reused verbatim by `start`/`stop`/`restart --json`
+ * once the action completes (JSON_MODE_SPEC.md §4/§6). */
+export interface InstanceStatus {
+  name: string;
+  container: string;
+  status: string;
+  image: string;
+  engine: string;
+  webUiPort: string;
+  homeVolume: VolumeStatus;
+  stateVolume: VolumeStatus;
+  ollama: OllamaStatus;
+}
+
+export interface LogsResult {
+  lines: string[];
+}
+
+export interface AddSuggestion {
+  name: string;
+  webUiPort: string;
+}
+
+export interface RemoveResult {
+  containerStopped: boolean;
+  containerRemoved: boolean;
+  removedVolumes: string[];
+  backupPath?: string;
+}
+
+/** One line of an `add`/`update`/`remove --json` NDJSON stream
+ * (JSON_MODE_SPEC.md §5). Forwarded verbatim from src-tauri/src/cli_bridge.rs. */
+export interface StreamEvent {
+  stage: string;
+  state: "start" | "progress" | "done" | "error";
+  detail?: string;
+  result?: unknown;
+  error?: { code: string; message: string; hint?: string };
+}
+
+export interface DoctorCheck {
+  label: string;
+  status: string;
+  detail: string;
+  hint: string;
+  action?: string;
+  actionLabel?: string;
+  actionValue?: string;
+}
+
+export interface DoctorResult {
+  checks: DoctorCheck[];
+  allPass: boolean;
+}
+
+export interface ConfigInfo {
+  containerName: string;
+  homeVolume: string;
+  stateVolume: string;
+  memory: string;
+  shmSize: string;
+  webUiPort: string;
+  runtime: string;
+  image: string;
+  installedAt: string;
+}
+
 export type CliError =
   | { kind: "spawn"; message: string }
   | { kind: "no_output" }

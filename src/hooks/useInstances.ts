@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { CliError, ListEntry } from "../types/cli";
 
@@ -14,15 +14,20 @@ export interface InstancesState {
    * around rather than cleared, so a transient engine hiccup doesn't blank
    * a dashboard that was showing real data a moment ago. */
   error: CliError | null;
+  /** Re-runs the list fetch immediately, outside the poll interval — call
+   * after a lifecycle action resolves so the row reflects the new state
+   * without waiting up to POLL_INTERVAL_MS. */
+  refresh: () => void;
 }
 
 export function useInstances(): InstancesState {
-  const [state, setState] = useState<InstancesState>({
+  const [state, setState] = useState<Omit<InstancesState, "refresh">>({
     entries: null,
     loading: true,
     error: null,
   });
   const mounted = useRef(true);
+  const pollRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     mounted.current = true;
@@ -44,6 +49,7 @@ export function useInstances(): InstancesState {
       }
     }
 
+    pollRef.current = poll;
     poll();
     const id = setInterval(poll, POLL_INTERVAL_MS);
     return () => {
@@ -52,5 +58,9 @@ export function useInstances(): InstancesState {
     };
   }, []);
 
-  return state;
+  const refresh = useCallback(() => {
+    pollRef.current();
+  }, []);
+
+  return { ...state, refresh };
 }

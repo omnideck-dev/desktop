@@ -48,6 +48,14 @@ button:disabled {
   background: var(--accent-hover);
 }
 
+.primary-button--danger {
+  background: var(--danger);
+}
+
+.primary-button--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 86%, #000);
+}
+
 .ghost-button {
   padding: var(--sp-1) var(--sp-3);
   color: var(--text-secondary);
@@ -59,6 +67,79 @@ button:disabled {
 .ghost-button:hover:not(:disabled) {
   color: var(--text-primary);
   background: var(--border-subtle);
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.icon-button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--border-subtle);
+}
+
+.icon-button--accent {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.icon-button--accent:hover:not(:disabled) {
+  background: var(--accent-muted);
+}
+
+/* ═══════════════════════════════════════════════════════
+   Dropdown menu (kebab)
+   ═══════════════════════════════════════════════════════ */
+
+.dropdown-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.dropdown-menu__list {
+  /* position: fixed + top/right come from DropdownMenu.tsx's measured
+     placement, so the menu can flip upward near the bottom of the viewport
+     instead of always dropping down and forcing a scroll. */
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: var(--sp-1);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.dropdown-menu__item {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-primary);
+  text-align: left;
+  font-size: 13px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+}
+
+.dropdown-menu__item:hover:not(:disabled) {
+  background: var(--border-subtle);
+}
+
+.dropdown-menu__item--danger {
+  color: var(--danger);
+}
+
+.dropdown-menu__item--danger:hover:not(:disabled) {
+  background: var(--danger-muted);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -108,8 +189,8 @@ button:disabled {
    ═══════════════════════════════════════════════════════ */
 
 .app-shell {
-  display: grid;
-  grid-template-columns: 200px 1fr;
+  display: flex;
+  flex-direction: column;
   width: 100vw;
   height: 100vh;
   background: var(--canvas);
@@ -117,18 +198,19 @@ button:disabled {
 
 .app-nav {
   display: flex;
-  flex-direction: column;
+  flex: none;
+  align-items: center;
   gap: var(--sp-1);
-  padding: var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
 .app-nav__brand {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  margin-bottom: var(--sp-4);
+  margin-right: var(--sp-4);
 }
 
 .app-nav__brand-text {
@@ -187,14 +269,139 @@ button:disabled {
   font-weight: 600;
 }
 
+.app-nav__tab {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-md);
+}
+
+.app-nav__tab.is-active {
+  background: var(--accent-muted);
+}
+
+.app-nav__tab-label {
+  padding: var(--sp-1) 0;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  max-width: 14ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-nav__tab.is-active .app-nav__tab-label {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.app-nav__tab-label:hover {
+  color: var(--text-primary);
+}
+
+.app-nav__tab-close {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-full);
+}
+
+.app-nav__tab-close:hover {
+  color: var(--text-primary);
+  background: var(--border-subtle);
+}
+
 .app-nav__spacer {
   flex: 1;
 }
 
 .app-content {
-  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: var(--sp-8);
+}
+
+/* ═══════════════════════════════════════════════════════
+   External pages (Help/Community — embedded iframe)
+   ═══════════════════════════════════════════════════════ */
+
+.external-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin: calc(var(--sp-8) * -1);
+}
+
+.external-page__bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.external-page__title {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.external-page__frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: #fff;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Instance webview tab (DESIGN.md #7)
+   ═══════════════════════════════════════════════════════ */
+
+.instance-tab {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  margin: calc(var(--sp-8) * -1);
+}
+
+.instance-tab__frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: #fff;
+}
+
+.instance-tab__loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--canvas);
+}
+
+.instance-tab__placeholder {
+  display: grid;
+  place-items: center;
+  gap: var(--sp-2);
+  flex: 1;
+  text-align: center;
+  color: var(--text-secondary);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -250,17 +457,20 @@ button:disabled {
   background: var(--elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  overflow: hidden;
+  /* auto, not hidden — content that still doesn't fit at the window's
+     minimum width scrolls instead of being invisibly clipped. */
+  overflow: auto;
 }
 
 .dashboard__table {
   width: 100%;
+  min-width: 640px;
   border-collapse: collapse;
   font-size: 13px;
 }
 
 .dashboard__table th {
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-3) var(--sp-2);
   color: var(--text-tertiary);
   text-align: left;
   font: 500 10px/1 var(--font-brand);
@@ -269,13 +479,38 @@ button:disabled {
   border-bottom: 1px solid var(--border);
 }
 
+.dashboard__table th:first-child,
+.deck-row td:first-child {
+  padding-left: var(--sp-4);
+}
+
+.dashboard__table th:last-child,
+.deck-row td:last-child {
+  padding-right: var(--sp-4);
+}
+
 .deck-row td {
-  padding: var(--sp-3) var(--sp-4);
+  padding: var(--sp-3) var(--sp-2);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .deck-row:last-child td {
   border-bottom: none;
+}
+
+.deck-row {
+  cursor: pointer;
+}
+
+.deck-row:hover td {
+  background: var(--border-subtle);
+}
+
+/* The actions cell opts out of the row's click-to-open-UI (stopPropagation
+   in DeckRow.tsx) and shouldn't visually imply it's part of that click
+   target either. */
+.deck-row__actions {
+  cursor: default;
 }
 
 .deck-row__name-main {
@@ -284,17 +519,51 @@ button:disabled {
 }
 
 .deck-row__name-sub {
+  overflow: hidden;
+  max-width: 20ch;
   color: var(--text-tertiary);
   font-size: 12px;
+  text-overflow: ellipsis;
+  /* The image string (e.g. ghcr.io/omnideck-dev/omnideck:latest) has no
+     spaces, so without this it renders as one unbreakable token and blows
+     the Name column — and every other column, including Actions — out to
+     fit it. */
+  white-space: nowrap;
 }
 
 .deck-row__num {
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
+  /* Values like "402.7MB / 1.074GB" have a natural break point at the
+     slash — without this they wrap onto two lines under real content
+     pressure, which then indirectly squeezes other columns (Actions
+     included) more than intended. */
+  white-space: nowrap;
 }
 
 .deck-row__actions {
+  /* table-layout:auto's shrink heuristic doesn't reliably respect what
+     this column actually needs once real multi-row content is competing
+     for space — confirmed by screenshot: at the app's real 900px minimum
+     width with real Deck data, this column was squeezed enough to force
+     the 4 action icons onto two lines. An explicit floor is the only
+     reliable fix; 4 icon-buttons (28px) + 3 gaps (--sp-1) + cell padding
+     (--sp-4 × 2) ≈ 156px, rounded up for breathing room. */
+  min-width: 168px;
   text-align: right;
+}
+
+.deck-row__actions-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  justify-content: flex-end;
+}
+
+.deck-row__error {
+  margin-top: var(--sp-1);
+  color: var(--danger);
+  font-size: 12px;
 }
 
 .status-dot-wrap {
@@ -378,4 +647,193 @@ button:disabled {
 .settings__note {
   color: var(--text-tertiary);
   font-size: 13px;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Modal overlay (Logs panel, and future confirm dialogs)
+   ═══════════════════════════════════════════════════════ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  z-index: 10;
+}
+
+.modal-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  width: min(640px, 90vw);
+  max-height: 80vh;
+  padding: var(--sp-5);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-panel__header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.logs-panel__controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.segmented {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.segmented__item {
+  padding: var(--sp-1) var(--sp-3);
+  color: var(--text-secondary);
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+}
+
+.segmented__item.is-selected {
+  color: var(--accent);
+  background: var(--elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.new-deck-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.new-deck-form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.new-deck-form input {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-primary);
+  font: 13px/1.4 var(--font-body);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.new-deck-form input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+}
+
+.remove-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.remove-choice legend {
+  padding: 0 var(--sp-1);
+  color: var(--text-tertiary);
+  font: 500 10px/1 var(--font-brand);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.remove-choice label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.stage-list {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: var(--sp-2);
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.stage-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.stage-list__item--done {
+  color: var(--success);
+}
+
+.stage-list__item--error {
+  color: var(--danger);
+}
+
+.stage-list__state {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.stage-list__detail {
+  color: var(--text-tertiary);
+}
+
+.stage-list__item--fail {
+  color: var(--danger);
+}
+
+.stage-list__item--warn {
+  color: var(--warning);
+}
+
+.stage-list__item--pass {
+  color: var(--success);
+}
+
+.stage-list__item--info {
+  color: var(--text-secondary);
+}
+
+.logs-panel__output {
+  overflow: auto;
+  margin: 0;
+  padding: var(--sp-3);
+  color: var(--terminal-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--terminal-bg);
+  border: 1px solid var(--terminal-border);
+  border-radius: var(--radius-md);
+  font: 400 12px/1.6 var(--font-code);
 }

@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Temporary local CLI build used as the Tauri sidecar (see CLI_SIDECAR in
+# src-tauri/src/cli_bridge.rs and bundle.externalBin in tauri.conf.json).
+# This is a local build, not a checksummed release artifact yet — per
+# AGENT.md's sidecar-pinning rule, don't commit it until it's replaced by a
+# real pinned+checksummed download step.
+/src-tauri/binaries/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

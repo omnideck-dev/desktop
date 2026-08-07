@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:app": "bash scripts/dev.sh",
     "build": "tsc && vite build",
+    "build:appimage": "bash scripts/build-appimage.sh",
+    "run:appimage": "bash scripts/run-appimage.sh",
     "preview": "vite preview",
     "tauri": "tauri"
   },

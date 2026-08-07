@@ -120,11 +120,11 @@ Adopt the data model and actions from `desktop-cli-unification/SPEC.md` §5 as-i
 
 ### 5. App chrome / navigation
 
-- Persistent sidebar or top bar, always visible regardless of which view is active:
+- Persistent top nav bar, always visible regardless of which view is active (decided — not a sidebar):
   - **Dashboard** (home) — the Decks list.
   - **Open instances** — one entry per instance the user has opened, each a tab/webview pointed at that instance's own port. Clicking "Open UI" on a dashboard row adds/focuses this tab rather than replacing the dashboard.
-  - **Help** — opens the docs website via Tauri's shell-open (external browser, not embedded).
-  - **Community** — opens the Slack invite, same mechanism.
+  - **Help** — `https://www.omnideck.dev/docs/`, loaded in-window via iframe (revised from the original external-browser-only plan — a deliberate product decision). CSP `frame-src` allows this origin explicitly. Has an "Open in browser" fallback button, since a cross-origin iframe gives no reliable way to detect if the target refused to be framed.
+  - **Community** — the Slack invite (`join.slack.com/...`), same in-window iframe treatment, same fallback. Slack invite/signup flows are known to sometimes send `X-Frame-Options`/`frame-ancestors` that block embedding — the "Open in browser" fallback exists specifically for this case.
   - **Settings** — advanced-logging toggle, CLI version/contract info, migration status/actions.
 
 ### 6. Dependency install (unchanged responsibility, new implementation)

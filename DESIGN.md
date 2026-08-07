@@ -50,7 +50,7 @@ Each entry: purpose, states, the data it's driven by (field names from the JSON 
 - **Purpose**: always-visible nav so any view is one click from any other.
 - **States**: Dashboard active (no instance tabs open) · Dashboard active with N instance tabs open · an instance tab active · Settings active · advanced-logging indicator on (subtle, doesn't need its own full state).
 - **Elements**: wordmark/mark, nav list (Dashboard, one entry per open instance tab — closable — Help, Community, Settings).
-- **Actions**: click switches the content pane; instance tabs close independently of stopping the underlying Deck; Help/Community open the user's default browser, never load in-window.
+- **Actions**: click switches the content pane; instance tabs close independently of stopping the underlying Deck; Help/Community load in-window via iframe (revised — originally external-browser-only), with an "Open in browser" fallback button since a blocked/refused embed isn't reliably detectable from a cross-origin iframe.
 - **Open question**: how do many open tabs behave — wrap, scroll, or overflow menu? No hard cap exists on how many Decks a user can open at once.
 
 ### 2. Onboarding (first-time setup) — deltas on top of the reused screens

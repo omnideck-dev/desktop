@@ -1,9 +1,25 @@
+import { useState } from "react";
 import { useInstances } from "../../hooks/useInstances";
+import type { ListEntry } from "../../types/cli";
 import { cliErrorSummary } from "../../types/cli";
 import DeckRow from "./DeckRow";
+import InstanceConfigPanel from "./InstanceConfigPanel";
+import InstanceDetailPanel from "./InstanceDetailPanel";
+import LogsPanel from "./LogsPanel";
+import NewDeckForm from "./NewDeckForm";
+import RemoveDeckDialog from "./RemoveDeckDialog";
 
-export default function DashboardView() {
-  const { entries, loading, error } = useInstances();
+export default function DashboardView({
+  onOpenInstance,
+}: {
+  onOpenInstance: (name: string, port: string) => void;
+}) {
+  const { entries, loading, error, refresh } = useInstances();
+  const [logsFor, setLogsFor] = useState<string | null>(null);
+  const [removeFor, setRemoveFor] = useState<string | null>(null);
+  const [configFor, setConfigFor] = useState<string | null>(null);
+  const [detailFor, setDetailFor] = useState<ListEntry | null>(null);
+  const [showNewDeck, setShowNewDeck] = useState(false);
 
   const engineUnreachable = error?.kind === "cli" && error.code === "ENGINE_NOT_FOUND";
 
@@ -11,7 +27,7 @@ export default function DashboardView() {
     <div className="dashboard">
       <div className="dashboard__header">
         <h1>Decks</h1>
-        <button className="primary-button" disabled title="Wired up in a later pass">
+        <button className="primary-button" onClick={() => setShowNewDeck(true)}>
           + New Deck
         </button>
       </div>
@@ -50,11 +66,50 @@ export default function DashboardView() {
             </thead>
             <tbody>
               {entries.map((entry) => (
-                <DeckRow key={entry.name} entry={entry} />
+                <DeckRow
+                  key={entry.name}
+                  entry={entry}
+                  onChanged={refresh}
+                  onOpenLogs={setLogsFor}
+                  onRemove={setRemoveFor}
+                  onOpenUi={onOpenInstance}
+                  onOpenDetail={setDetailFor}
+                  onOpenConfig={setConfigFor}
+                />
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {logsFor && <LogsPanel name={logsFor} onClose={() => setLogsFor(null)} />}
+
+      {removeFor && (
+        <RemoveDeckDialog
+          name={removeFor}
+          onClose={() => setRemoveFor(null)}
+          onRemoved={refresh}
+        />
+      )}
+
+      {configFor && <InstanceConfigPanel name={configFor} onClose={() => setConfigFor(null)} />}
+
+      {detailFor && (
+        <InstanceDetailPanel
+          entry={detailFor}
+          onClose={() => setDetailFor(null)}
+          onChanged={refresh}
+        />
+      )}
+
+      {showNewDeck && (
+        <NewDeckForm
+          onClose={() => setShowNewDeck(false)}
+          onCreated={() => {
+            refresh();
+            setShowNewDeck(false);
+          }}
+        />
       )}
     </div>
   );
