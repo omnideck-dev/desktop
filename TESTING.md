@@ -28,17 +28,16 @@ release goes out to actual users — see `RELEASING.md`.
 Source tests (`tests/policy.test.mjs`) keep the following invariants
 release-blocking:
 
-- the dashboard window's capability is an enumerated allowlist
-  (`dashboard-bridge`), never `core:default`;
-- the onboarding window's capability (`onboarding-bridge`) is scoped to
-  `"windows": ["onboarding"]` only — never `"main"`, which is the dashboard
-  here (this exact mistake was caught once already; see the policy test's
-  own comment);
-- every onboarding command re-checks `window.label() == "onboarding"`
-  server-side, not just the capability grant;
-- `bootstrap()` only reveals the onboarding window when setup is actually
-  needed — never unconditionally (this was a real, caught-and-fixed
-  regression);
+- the dashboard's (single `"main"` window's) capability is an enumerated
+  allowlist (`dashboard-bridge`), never `core:default`;
+- every bootstrap command (`bootstrap`/`begin_setup`/`run_action`)
+  re-checks `window.label() == "main"` server-side, not just the
+  capability grant;
+- `bootstrap.rs` never manages window visibility — asserted by absence, so
+  a future onboarding tweak can't quietly reintroduce the second window
+  that caused a real EGL/GPU-driver startup bug on some hardware (see
+  `AGENT.md` and `bootstrap.rs`'s doc comment for the full story; onboarding
+  is now a plain React screen `App.tsx` swaps in, not a separate window);
 - the CLI sidecar is pinned by checksum for all 6 target triples, and the
   runtime version check is a floor (`>= v0.10.0`), not an exact match;
 - sidecar process output is bounded and every operation has a timeout.

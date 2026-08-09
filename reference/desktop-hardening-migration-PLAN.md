@@ -73,6 +73,55 @@ if anything downstream still contradicts these, this section wins:
   have been written to match it, but if anything elsewhere in this doc still says `"main"` for the
   onboarding surface, that's stale and Phase 5's version wins.
 
+## Reversal (2026-08-09): onboarding is a React screen, not a second window
+
+The isolated-webview decision above shipped, built clean, and passed its own policy tests — but real
+hardware testing found it caused a genuine, reproducible bug: creating two GTK/WebKit windows at startup
+(the visible `"main"` dashboard plus the hidden `"onboarding"` window) failed EGL/GPU-driver
+initialization (`Could not create default EGL display: EGL_BAD_PARAMETER`, blank white dashboard) on a
+real Intel Iris Xe / Mesa 26.1.4 combination. Root-caused by process of elimination over roughly a dozen
+hypotheses (NVIDIA-specific, Wayland-vs-X11, WebKit compositing mode, the DMA-BUF renderer,
+software-only Mesa rendering, individual bundled shared libraries) — all ruled out with real evidence,
+including the strong signal that `LIBGL_ALWAYS_SOFTWARE=1` still failed identically, which should have
+bypassed any hardware-driver-specific cause. What actually fixed it: disabling creation of the second
+window entirely. That fix was independently reproduced against the *sibling* app's own build too (same
+two-window-at-startup pattern, same failure) — meaning this is a real bug in the pattern itself on
+certain hardware, not something specific to this repo's port.
+
+Given that, the user asked to keep onboarding as a visually distinct *screen* but drop the second
+*window* — this doc's "Onboarding is an isolated webview" and "vanilla JS/HTML/CSS, not React" bullets
+above are superseded:
+
+- **One window, one React app.** `src-tauri/src/bootstrap.rs`'s `create_onboarding_window`/
+  `show_onboarding`/`show_dashboard`/`open_dashboard` are deleted outright, not feature-flagged — there's
+  no window left to show or hide. `bootstrap`/`begin_setup`/`run_action` (3 commands, `open_dashboard`
+  dropped — nothing left for it to hand off to) are folded into the dashboard's existing
+  `dashboard-bridge` capability and called from the single `"main"` window.
+- **Onboarding is now `src/components/OnboardingView.tsx` + `src/hooks/useBootstrap.ts`**, a straight
+  port of `public/onboarding/setup.js`'s `render(state)` logic and `setup.css`'s visual design (now
+  reusing `src/styles/tokens.css` instead of duplicating its tokens) into React. `App.tsx` calls
+  `bootstrap` on mount and renders `OnboardingView` in place of the dashboard until the runtime is ready
+  *and* the user has clicked through ("Continue" is purely a local `App.tsx` state change now, not an
+  IPC call — there's nothing left for a command to show/hide). The vanilla-JS `public/onboarding/` and
+  `withGlobalTauri` (only needed for that unbundled JS to reach `window.__TAURI__`) are both deleted.
+- **Real, knowingly-accepted security tradeoff.** The whole point of the original isolated-window design
+  was a capability boundary the OS/Tauri enforced independently of application code — a compromised
+  dashboard couldn't invoke bootstrap commands, and vice versa, because they lived behind different
+  window-scoped capability grants. That boundary is gone: `bootstrap`/`begin_setup`/`run_action` are now
+  reachable from the same capability grant as the rest of the dashboard's command surface. What's kept:
+  `bootstrap.rs`'s own `window.label() == "main"` check (now the *only* enforcement, not
+  defense-in-depth alongside a capability boundary) and the server-side `offered_actions` allowlist for
+  `run_action`. This is a deliberate choice, not an oversight — a real, hardware-triggered startup crash
+  was judged worse than losing this specific isolation boundary. If the isolation matters enough to
+  re-add later, revisit with either a fix for the underlying two-window EGL bug (not attempted — root
+  cause is in Mesa/WebKit's window-creation path, well outside this app's control) or a *lazily created*
+  second window (created only once onboarding is actually needed, not unconditionally at startup — this
+  wasn't tried, so it's unknown whether it would still trigger the same bug).
+- **Tests**: `tests/policy.test.mjs`'s onboarding-window-isolation assertions were replaced with
+  equivalents for the single-window model (dashboard-bridge's command list includes the 3 bootstrap
+  commands, `authorize_main` checks `"main"`, and a new assertion that `bootstrap.rs` contains no window-
+  management symbols at all — asserted by absence, so this exact pattern can't quietly creep back in).
+
 ---
 
 ## Phase 1 — Sidecar integrity (do this before shipping any real build)
@@ -193,6 +242,13 @@ that's their problem to port back, not this repo's problem to solve. For *this* 
   those scripts.
 
 ## Phase 5 — Bootstrap/onboarding state machine and its isolated webview
+
+**Superseded by "Reversal (2026-08-09)" above**: this phase's window-creation steps (`create_onboarding_window`,
+the `"onboarding"` capability/permission files, the vanilla-JS `public/onboarding/` bundle) were built,
+shipped, then removed after a real hardware bug. Left unedited below as the historical record of the
+original design and why it was chosen — the checkboxes are still `[x]` because the work described *was*
+done, just later reverted. Do not use this phase as a guide for the current architecture; use the Reversal
+section and `bootstrap.rs`'s own doc comment instead.
 
 `AGENT.md` already names `bootstrap.rs` (podman/docker detection+install, WSL2 setup, `podman machine`
 lifecycle) as the one legitimate non-CLI-delegated logic in this repo's target architecture, and it's

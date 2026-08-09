@@ -8,25 +8,32 @@ The Tauri v2 + React/TypeScript rewrite of the Omnideck desktop app, replacing t
 
 **Current status: sequencing steps 2–4 done** (Tauri mechanics, read-only dashboard, and lifecycle actions — see `desktop_tauri_rewrite.md`'s Sequencing section). `src-tauri/` and `src/` build clean (`cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `npm run build` all pass). `cli_bridge.rs` + `commands.rs` cover `list`/`status`/`logs`/`start`/`stop`/`restart`/`add`/`remove` against the real CLI JSON/NDJSON contract, with `cargo test` fixtures pinning the JSON shapes. The frontend has an app shell (Dashboard/Settings nav) on the ported SIGNAL tokens: Dashboard polls `list --json` with per-row Start/Stop/Restart/Logs/Remove, a New Deck form streaming `add --json` progress, a Remove confirmation dialog with the CLI's required explicit keep/delete + backup choices, and a blocking screen for CLI-missing/contract-mismatch. Every backend command was verified against the real CLI directly (not just typechecked) before being trusted. `update_instance`, instance detail drill-in (DESIGN.md #6), and Open UI instance webview tabs (DESIGN.md #7) are done — the "still to do" list below was stale about these. **Hardening-migration Phases 1–4 are done** (see `reference/desktop-hardening-migration-PLAN.md`): sidecar pinned+checksummed against real CLI `v0.10.0` (`vendor-manifest.json`, `fetch:sidecars`/`verify:sidecars`), `EXPECTED_JSON_CONTRACT` corrected to `2` with a `MINIMUM_CLI_VERSION` floor check, the dashboard capability replaced with an enumerated `dashboard-bridge` allowlist, `cli_bridge.rs` now bounds stdout/stderr and enforces per-operation timeouts via a unified `run_cli` helper with correct NDJSON line reassembly across chunk boundaries, `tauri-plugin-single-instance` is wired up, and the AppImage runtime fixes were confirmed still intact and still build clean. **Hardening-migration Phase 5 is also done**: `bootstrap.rs` drives the shared Podman runtime's
 readiness via `cli_bridge::runtime_status`/`runtime_ensure` (correcting this doc's earlier claim that the
-CLI had no equivalent — it does, as of `v0.10.0`) and owns the 4-command IPC surface
-(`bootstrap`/`begin_setup`/`open_dashboard`/`run_action`) for the isolated `"onboarding"` window, created
-hidden via `WebviewWindowBuilder` in `lib.rs`'s `setup()` hook and scoped to its own `onboarding-bridge`
-capability (never `"main"`, which is the dashboard here — see the module's own doc comment and
-`reference/desktop-hardening-migration-PLAN.md`'s "Decisions from review" for why the sibling's window
-labels don't map 1:1). The onboarding UI itself (`public/onboarding/{index.html,setup.css,setup.js,
-host-adapter.js}`) is vanilla JS/CSS, ported from the sibling's `web/` and adapted to this repo's two real
-bootstrap phases (`software`/`environment`, matching the CLI's own `runtime ensure` stages exactly — no
-`download`/`startup` phase here, since pulling an image and creating a Deck is the dashboard's separate,
-already-built `add_instance` flow). No resume-record file — `bootstrap.rs`'s doc comment explains why one
-isn't needed here. Test coverage ported alongside: `tests/policy.test.mjs` (security-posture assertions,
-`node --test`, wired into `npm run test:policy` and the `verify` composite), `tests/manual/*.md`
-(clean-first-run and recovery-lifecycle procedures), and `tests/hardware/validate-proof.mjs` (packaged-build
-smoke check, `OMNIDECK_DESKTOP_SMOKE_FILE`-gated in `lib.rs`). Verified end-to-end this session: `npm run
-verify` clean (fetch/verify sidecars, policy tests, typecheck, fmt, Rust tests, clippy), a real `npm run
-dev:app` launch with both windows live and no errors, a real `npm run build:appimage` + `run:appimage`
-launch with no crashes/coredumps, and a caught-and-fixed regression (`bootstrap()` was unconditionally
-showing the onboarding window on every launch before the fix — `tests/policy.test.mjs` now guards this
-shape). Still to do: onboarding visual polish/copy review, migration (legacy Electron data → CLI-managed
+CLI had no equivalent — it does, as of `v0.10.0`) and owns the 3-command IPC surface
+(`bootstrap`/`begin_setup`/`run_action`), folded into the dashboard's own `dashboard-bridge` capability
+and called from the single `"main"` window. **This wasn't the original design** — onboarding first
+shipped as a second, isolated `"onboarding"` window (own capability, hidden via `WebviewWindowBuilder`,
+vanilla JS/CSS UI ported from the sibling's `web/`), on the theory that window-scoped capabilities are a
+real security boundary worth having. That held up until real hardware testing found it caused a genuine
+bug: creating two GTK/WebKit windows at startup (one hidden) failed EGL/GPU-driver init
+(`EGL_BAD_PARAMETER`, blank white dashboard) on a real Intel Iris Xe/Mesa 26.1.4 combination, reproduced
+independently in the sibling app's own build too — i.e. not something specific to this repo's port. Fixed
+by removing the second window entirely: onboarding is now just another React screen
+(`src/components/OnboardingView.tsx`, `src/hooks/useBootstrap.ts`) that `App.tsx` swaps in for the
+dashboard until the shared runtime is ready, using the exact same `SetupState` push model
+(`tauri::ipc::Channel`) as before. **Real, knowingly-accepted tradeoff**: the bootstrap commands are no
+longer isolated behind a separate capability grant the way a second window enforced — see `bootstrap.rs`'s
+module doc comment and `reference/desktop-hardening-migration-PLAN.md`'s "Decisions from review" for the
+full history of both the original design and the reversal. Two real bootstrap phases
+(`software`/`environment`, matching the CLI's own `runtime ensure` stages exactly — no `download`/`startup`
+phase here, since pulling an image and creating a Deck is the dashboard's separate, already-built
+`add_instance` flow). No resume-record file — `bootstrap.rs`'s doc comment explains why one isn't needed
+here. Test coverage: `tests/policy.test.mjs` (security-posture assertions, `node --test`, wired into
+`npm run test:policy` and the `verify` composite), `tests/manual/*.md` (clean-first-run and
+recovery-lifecycle procedures), and `tests/hardware/validate-proof.mjs` (packaged-build smoke check,
+`OMNIDECK_DESKTOP_SMOKE_FILE`-gated in `lib.rs`). Verified end-to-end: `npm run verify` clean (fetch/verify
+sidecars, policy tests, typecheck, fmt, Rust tests, clippy), a real `npm run dev:app` launch and a real
+`npm run build:appimage` + `run:appimage` launch with no crashes/coredumps/EGL errors, single window
+confirmed. Still to do: onboarding visual polish/copy review, migration (legacy Electron data → CLI-managed
 instance — untouched by this session, still the highest-risk remaining path per this doc's rules above),
 and Phase 6/7 of the hardening plan (CI, release engineering — explicitly deferred in that doc until this
 repo actually gets CI / cuts a first release, not preemptive work). Update this file as decisions firm up;

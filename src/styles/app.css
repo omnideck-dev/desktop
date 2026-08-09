@@ -185,6 +185,248 @@ button:disabled {
 }
 
 /* ═══════════════════════════════════════════════════════
+   Onboarding screen — no app chrome yet, shown in place of the
+   dashboard until the shared Podman runtime is ready. Ported from the
+   original isolated onboarding window's public/onboarding/setup.css
+   (SIGNAL tokens now come from tokens.css instead of being duplicated).
+   ═══════════════════════════════════════════════════════ */
+
+@keyframes onboarding-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.onboarding-screen {
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  height: 100vh;
+  background: var(--surface);
+}
+
+.onboarding-screen__panel {
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 90vw);
+  height: min(560px, 90vh);
+  padding: var(--sp-8) var(--sp-8) var(--sp-6);
+  background: var(--canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+
+.onboarding-screen__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.onboarding-mark {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 3px;
+  width: 34px;
+  height: 34px;
+  padding: var(--sp-2);
+  background: var(--accent);
+  border-radius: var(--radius-lg);
+}
+
+.onboarding-mark span {
+  display: block;
+  width: 3px;
+  background: #fff;
+  border-radius: var(--radius-full);
+}
+
+.onboarding-mark span:nth-child(1) {
+  height: 8px;
+}
+.onboarding-mark span:nth-child(2) {
+  height: 16px;
+}
+.onboarding-mark span:nth-child(3) {
+  height: 12px;
+}
+
+.onboarding-brand {
+  margin: 0;
+  color: var(--text-secondary);
+  font: 600 11px/1 var(--font-brand);
+  letter-spacing: 0.16em;
+}
+
+.onboarding-screen__status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin: auto 0;
+  padding: var(--sp-10) 0 var(--sp-6);
+}
+
+.onboarding-screen__status h1 {
+  max-width: 26ch;
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.onboarding-detail {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.onboarding-activity {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.onboarding-progress-wrap {
+  margin: 0;
+}
+
+.onboarding-progress-track {
+  height: 4px;
+  overflow: hidden;
+  background: var(--border);
+  border-radius: var(--radius-full);
+}
+
+.onboarding-progress {
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 180ms var(--ease-out);
+}
+
+.onboarding-progress-wrap.is-indeterminate .onboarding-progress {
+  width: 34%;
+  animation: onboarding-progress-slide 1.3s var(--ease) infinite;
+  transition: none;
+}
+
+.onboarding-diagnostics {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.onboarding-diagnostics__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.onboarding-diagnostics__heading span {
+  color: var(--text-secondary);
+  font: 500 10px/1 var(--font-brand);
+  letter-spacing: 0.14em;
+}
+
+.onboarding-diagnostic-list {
+  display: grid;
+  gap: 1px;
+}
+
+.onboarding-diagnostic-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 22px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.onboarding-diagnostic-icon {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  color: var(--text-secondary);
+  background: transparent;
+  border-radius: var(--radius-full);
+  font: 600 10px/1 var(--font-brand);
+}
+
+.onboarding-diagnostic-row[data-status="pass"] .onboarding-diagnostic-icon {
+  color: var(--success);
+  background: var(--success-muted);
+}
+
+.onboarding-diagnostic-row[data-status="issue"] .onboarding-diagnostic-icon {
+  color: var(--danger);
+  background: var(--danger-muted);
+}
+
+.onboarding-diagnostics details {
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.onboarding-diagnostics summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.onboarding-diagnostics pre {
+  max-height: 92px;
+  overflow: auto;
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-2);
+  color: var(--terminal-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--terminal-bg);
+  border: 1px solid var(--terminal-border);
+  border-radius: var(--radius-md);
+  font: 400 10px/1.5 var(--font-code);
+}
+
+.onboarding-primary,
+.onboarding-secondary {
+  width: 100%;
+  min-height: 36px;
+}
+
+.onboarding-action-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.onboarding-footnote {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════════════
    App shell
    ═══════════════════════════════════════════════════════ */
 
