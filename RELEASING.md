@@ -11,10 +11,13 @@ never move or reuse one.
 2. If the pinned CLI needs bumping too, update
    `src-tauri/binaries/vendor-manifest.json` deliberately (see
    `AGENT.md`'s "CLI sidecar" note) — never weaken its checksum checks.
-3. Commit, push, and confirm `.github/workflows/ci.yml`'s `test` job is
-   green on `main` at the commit you're about to tag. A green `test` job
-   doesn't require having also run the full build matrix — but if you want
-   that confidence before tagging, `workflow_dispatch` the workflow first.
+3. Commit, push, and confirm `ci.yml` is green on `main` at the commit
+   you're about to tag (it calls the shared `test.yml`). That doesn't
+   require having also run the full build matrix — but if you want that
+   confidence before tagging, manually dispatch `release.yml`
+   (Actions tab → "release" → "Run workflow"), which builds all three
+   platforms without publishing anything (the `publish` job only runs for
+   an actual tag push).
 4. Tag the exact commit on `main` and push the tag:
    ```sh
    git switch main
@@ -23,10 +26,14 @@ never move or reuse one.
    git push origin v0.1.0
    ```
 
-Pushing a `v*` tag triggers `ci.yml`'s `test` → `build` → `release` chain:
-`test` rejects the tag outright if it doesn't exactly match
+Three workflow files, one reusable: `test.yml` (`workflow_call` only, the
+actual source checks) is called by both `ci.yml` (every PR/push to
+`main`, test only — no installer builds) and `release.yml` (tag pushes and
+manual dispatch: `test` → `build` → `publish`). Pushing a `v*` tag runs
+`release.yml`'s full chain: `test` reruns against the exact tagged commit
+and rejects the tag outright if it doesn't exactly match
 `v<package.json version>` (bump the version and retag if you see this),
-`build` produces installers for all three platforms, and `release` attests
+`build` produces installers for all three platforms, and `publish` attests
 build provenance, generates checksums, and publishes a GitHub Release with
 GitHub's auto-generated notes (commits since the last tag). A tag containing
 a prerelease suffix publishes as a GitHub prerelease and doesn't move
@@ -34,7 +41,7 @@ a prerelease suffix publishes as a GitHub prerelease and doesn't move
 
 ### Review gate: stable vs. prerelease
 
-The `release` job targets one of two GitHub Environments, chosen by whether
+The `publish` job targets one of two GitHub Environments, chosen by whether
 `github.ref_name` contains a `-` (the same check that decides
 `prerelease`/`make_latest` above):
 
@@ -51,7 +58,7 @@ GitHub environment reviewers are named users/teams, not a live-tracked
 `release`'s reviewer list by hand (see below) or replace it with a team.
 
 Both environments are configured directly via the GitHub API/repo settings,
-not in `ci.yml` — `gh api repos/omnideck-dev/desktop/environments/release`
+not in `release.yml` — `gh api repos/omnideck-dev/desktop/environments/release`
 to inspect or change the required reviewers.
 
 ## Current known gaps

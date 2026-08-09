@@ -1,0 +1,58 @@
+name: test
+
+# Reusable workflow, not directly triggered — called by ci.yml (every PR and
+# push to main) and release.yml (every tag push, as a fresh check against
+# the exact tagged commit before building anything). Keeping this in one
+# place means the two callers can't drift out of sync with each other.
+on:
+  workflow_call:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev
+
+      - run: npm ci
+
+      - name: Cache pinned CLI sidecars
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries
+          key: sidecars-${{ hashFiles('src-tauri/binaries/vendor-manifest.json') }}
+
+      - name: Fetch + verify all pinned sidecars, run the full verify gate
+        run: npm run verify
+
+      - name: Validate release tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="v$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "$version" || {
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}."
+            echo "Bump package.json's version and retag, or delete and repush the correct tag."
+            exit 1
+          }
