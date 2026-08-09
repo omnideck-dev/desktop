@@ -1,7 +1,7 @@
 {
   "name": "omnideck-desktop",
   "private": true,
-  "version": "0.5.0-alpha4",
+  "version": "0.5.0-alpha.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,7 +20,7 @@
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings",
     "format:rust": "cargo fmt --manifest-path src-tauri/Cargo.toml -- --check",
     "verify": "npm run fetch:sidecars && npm run verify:sidecars && npm run test:policy && npm run typecheck && npm run format:rust && npm run test:rust && npm run lint:rust",
-    "build:linux": "node scripts/fetch-sidecars.mjs x86_64-unknown-linux-gnu && tauri build --bundles appimage,deb,rpm --target x86_64-unknown-linux-gnu",
+    "build:linux": "node scripts/fetch-sidecars.mjs x86_64-unknown-linux-gnu && NO_STRIP=1 tauri build --bundles appimage,deb,rpm --target x86_64-unknown-linux-gnu",
     "build:windows": "node scripts/fetch-sidecars.mjs x86_64-pc-windows-msvc && tauri build --bundles nsis --target x86_64-pc-windows-msvc",
     "build:macos": "node scripts/fetch-sidecars.mjs aarch64-apple-darwin && tauri build --bundles dmg --target aarch64-apple-darwin"
   },
