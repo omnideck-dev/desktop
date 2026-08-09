@@ -6,7 +6,9 @@ import { cliErrorSummary } from "../types/cli";
  * so it doesn't get a toast or a banner, it blocks. */
 export default function BlockingScreen({ error }: { error: CliError }) {
   const title =
-    error.kind === "contract_mismatch" ? "Omnideck CLI version mismatch" : "Can't reach the omnideck CLI";
+    error.kind === "contract_mismatch" || error.kind === "version_too_old"
+      ? "Omnideck CLI version mismatch"
+      : "Can't reach the omnideck CLI";
 
   return (
     <div className="blocking-screen">

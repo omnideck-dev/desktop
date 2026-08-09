@@ -13,14 +13,44 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::Duration;
 use tauri::Emitter;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
+/// Caps on how much stdout/stderr a single sidecar invocation may produce
+/// before this app gives up on it, so a runaway/hung `omnideck` process
+/// can't exhaust memory reading its output. Modeled on the sibling repo's
+/// `STDOUT_LIMIT`/`STDERR_LIMIT` in `lib.rs`.
+const STDOUT_LIMIT: usize = 1_000_000;
+const STDERR_LIMIT: usize = 256 * 1024;
+
+/// Per-operation timeouts. Short for anything that only inspects state
+/// (`list`/`status`/`doctor`/`config show`/`logs`); long for anything that
+/// can pull a container image or otherwise do first-run work (`add`,
+/// `update`). Modeled on the sibling's `FixedOperation::timeout()`.
+const INSPECTION_TIMEOUT: Duration = Duration::from_secs(15);
+const MUTATION_TIMEOUT: Duration = Duration::from_secs(20 * 60);
+
 /// The `jsonContract` version this app build was written against
 /// (`JSON_MODE_SPEC.md` §1). Bump only on a deliberate, reviewed change once
-/// the CLI's contract itself changes.
-pub const EXPECTED_JSON_CONTRACT: u64 = 1;
+/// the CLI's contract itself changes. `2` as of CLI `v0.10.0` — confirmed
+/// directly against a real `v0.10.0` sidecar binary's `--version --json`
+/// output and `contracts/json/v2/version.schema.json` in the CLI repo
+/// (`"jsonContract": { "const": 2 }`), not assumed from stale docs.
+pub const EXPECTED_JSON_CONTRACT: u64 = 2;
+
+/// The lowest CLI release this app build is verified against. Checked as a
+/// floor (`>=`), not an exact match — see
+/// `reference/desktop-hardening-migration-PLAN.md`'s "Decisions from
+/// review": the bundled sidecar is always exactly whatever
+/// `vendor-manifest.json` pinned at build time (checksummed, so an exact
+/// runtime match would be redundant with that), so this check exists to
+/// catch a build mistake or corrupted binary, not to gate against a
+/// different externally-supplied CLI. `v0.10.0` specifically because it's
+/// the first CLI release with the finalized `JSON_MODE_SPEC.md` contract and
+/// `runtime`/`environment` commands this app (and `bootstrap.rs`) depend on.
+pub const MINIMUM_CLI_VERSION: &str = "v0.10.0";
 
 /// The `omnideck` binary is bundled as a Tauri sidecar (`bundle.externalBin`
 /// in `tauri.conf.json`, source at `src-tauri/binaries/omnideck-<target-triple>`)
@@ -58,6 +88,22 @@ pub enum CliError {
     Cli(Box<CliErrorBody>),
     /// The CLI's `jsonContract` doesn't match what this app build expects.
     ContractMismatch { expected: u64, actual: u64 },
+    /// The CLI reports a version older than [`MINIMUM_CLI_VERSION`], or a
+    /// version string this app can't parse as `vMAJOR.MINOR.PATCH[-pre]`.
+    VersionTooOld { minimum: String, actual: String },
+    /// The sidecar's stdout or stderr exceeded [`STDOUT_LIMIT`]/[`STDERR_LIMIT`]
+    /// — the process is killed immediately rather than let unbounded output
+    /// accumulate in memory.
+    OutputLimitExceeded { stream: String },
+    /// The sidecar didn't finish within its operation's timeout — the
+    /// process is killed rather than left to block the calling command
+    /// indefinitely.
+    Timeout,
+    /// `runtime status`/`runtime ensure`'s `schemaVersion` doesn't match
+    /// [`EXPECTED_RUNTIME_SCHEMA`]. Independent from `jsonContract` — per the
+    /// CLI repo's `contracts/README.md`, "JSON contract 2 currently carries
+    /// runtime status schema 4"; the two axes version separately.
+    RuntimeSchemaMismatch { expected: u32, actual: u32 },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,7 +130,63 @@ impl std::fmt::Display for CliError {
                 f,
                 "omnideck CLI jsonContract mismatch: this app expects {expected}, CLI reports {actual}"
             ),
+            CliError::VersionTooOld { minimum, actual } => write!(
+                f,
+                "omnideck CLI version too old: this app requires at least {minimum}, CLI reports {actual}"
+            ),
+            CliError::OutputLimitExceeded { stream } => {
+                write!(f, "omnideck CLI exceeded the {stream} output limit")
+            }
+            CliError::Timeout => write!(f, "omnideck CLI did not finish in time"),
+            CliError::RuntimeSchemaMismatch { expected, actual } => write!(
+                f,
+                "omnideck CLI runtime status schema mismatch: this app expects {expected}, CLI reports {actual}"
+            ),
         }
+    }
+}
+
+/// Parses a `vMAJOR.MINOR.PATCH[-prerelease]` version string (the shape both
+/// this app's [`MINIMUM_CLI_VERSION`] and every real CLI release tag use).
+fn parse_semver(version: &str) -> Option<(u64, u64, u64, Option<&str>)> {
+    let version = version.strip_prefix('v').unwrap_or(version);
+    let (core, prerelease) = match version.split_once('-') {
+        Some((core, pre)) => (core, Some(pre)),
+        None => (version, None),
+    };
+    let mut parts = core.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch, prerelease))
+}
+
+/// `true` if `version >= minimum`. A prerelease is ordered below the plain
+/// release at the same `major.minor.patch` (matches semver precedence:
+/// `1.0.0-alpha < 1.0.0`); two prereleases at the same core version compare
+/// lexicographically, which is only exactly correct for same-width numeric
+/// suffixes (`alpha.9` < `alpha.10` lexicographically says otherwise) — an
+/// accepted imprecision here since `MINIMUM_CLI_VERSION` itself is always a
+/// plain release, so that comparison path is never exercised in practice.
+/// Unparseable version strings never satisfy the floor.
+fn meets_minimum_version(version: &str, minimum: &str) -> bool {
+    let Some((major, minor, patch, prerelease)) = parse_semver(version) else {
+        return false;
+    };
+    let Some((min_major, min_minor, min_patch, min_prerelease)) = parse_semver(minimum) else {
+        return false;
+    };
+    match (major, minor, patch).cmp(&(min_major, min_minor, min_patch)) {
+        std::cmp::Ordering::Greater => true,
+        std::cmp::Ordering::Less => false,
+        std::cmp::Ordering::Equal => match (prerelease, min_prerelease) {
+            (None, _) => true,
+            (Some(_), None) => false,
+            (Some(pre), Some(min_pre)) => pre >= min_pre,
+        },
     }
 }
 
@@ -126,31 +228,155 @@ fn sidecar_command<R: tauri::Runtime>(
         .env("LD_LIBRARY_PATH", ""))
 }
 
+/// Accumulates a stream chunk into `destination`, failing once the running
+/// total would exceed `limit` — never silently truncates. Modeled on the
+/// sibling repo's `append_bounded()` in `lib.rs`.
+fn append_bounded(
+    destination: &mut Vec<u8>,
+    chunk: &[u8],
+    limit: usize,
+    stream: &str,
+) -> Result<(), CliError> {
+    if destination.len().saturating_add(chunk.len()) > limit {
+        return Err(CliError::OutputLimitExceeded {
+            stream: stream.to_string(),
+        });
+    }
+    destination.extend_from_slice(chunk);
+    Ok(())
+}
+
+/// Reassembles complete lines across `CommandEvent::Stdout` chunk
+/// boundaries. `tauri-plugin-shell`'s event stream is not guaranteed to
+/// split exactly on `\n` — a single logical JSON line can arrive split
+/// across two chunks — so iterating `chunk.lines()` directly (as this
+/// module used to) can hand a caller half a JSON object. Modeled on the
+/// sibling repo's `LineBuffer` in `lib.rs`, which hit this exact bug.
+#[derive(Default)]
+struct LineBuffer {
+    pending: Vec<u8>,
+}
+
+impl LineBuffer {
+    fn push<F: FnMut(&str)>(&mut self, chunk: &[u8], on_line: &mut F) {
+        self.pending.extend_from_slice(chunk);
+        while let Some(index) = self.pending.iter().position(|byte| *byte == b'\n') {
+            let mut line: Vec<u8> = self.pending.drain(..=index).collect();
+            line.pop();
+            if line.last() == Some(&b'\r') {
+                line.pop();
+            }
+            Self::deliver(&line, on_line);
+        }
+    }
+
+    fn flush<F: FnMut(&str)>(&mut self, on_line: &mut F) {
+        let pending = std::mem::take(&mut self.pending);
+        Self::deliver(&pending, on_line);
+    }
+
+    fn deliver<F: FnMut(&str)>(line: &[u8], on_line: &mut F) {
+        let text = String::from_utf8_lossy(line);
+        let text = text.trim();
+        if !text.is_empty() {
+            on_line(text);
+        }
+    }
+}
+
+/// Only `stdout` is kept: this app's existing convention (predating this
+/// refactor) never inspects exit code or stderr — `JSON_MODE_SPEC.md` §8
+/// requires every failure to be a structured `error` object on stdout
+/// regardless of exit code, which is what [`run_json`]/[`run_ndjson_stream`]
+/// already parse for directly.
+struct ProcessResult {
+    stdout: Vec<u8>,
+}
+
+/// Spawns the sidecar with `args`, enforcing [`STDOUT_LIMIT`]/[`STDERR_LIMIT`]
+/// and `timeout_duration` (killing the child on either violation), and
+/// calling `on_line` with each complete, reassembled stdout line as it
+/// arrives — used both by [`run_json`] (which ignores the lines and reads
+/// the accumulated stdout once the process exits) and [`run_ndjson_stream`]
+/// (which is driven entirely by the lines). Modeled on the sibling repo's
+/// `run_cli()` in `lib.rs`.
+async fn run_cli<R: tauri::Runtime, F: FnMut(&str)>(
+    app: &tauri::AppHandle<R>,
+    args: &[&str],
+    timeout_duration: Duration,
+    mut on_line: F,
+) -> Result<ProcessResult, CliError> {
+    let (mut events, child) =
+        sidecar_command(app)?
+            .args(args)
+            .spawn()
+            .map_err(|e| CliError::Spawn {
+                message: e.to_string(),
+            })?;
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    let mut stdout_lines = LineBuffer::default();
+    let mut timeout = Box::pin(tokio::time::sleep(timeout_duration));
+
+    loop {
+        tokio::select! {
+            _ = &mut timeout => {
+                let _ = child.kill();
+                return Err(CliError::Timeout);
+            }
+            event = events.recv() => match event {
+                Some(CommandEvent::Stdout(bytes)) => {
+                    if let Err(e) = append_bounded(&mut stdout, &bytes, STDOUT_LIMIT, "stdout") {
+                        let _ = child.kill();
+                        return Err(e);
+                    }
+                    stdout_lines.push(&bytes, &mut on_line);
+                }
+                Some(CommandEvent::Stderr(bytes)) => {
+                    if let Err(e) = append_bounded(&mut stderr, &bytes, STDERR_LIMIT, "stderr") {
+                        let _ = child.kill();
+                        return Err(e);
+                    }
+                }
+                Some(CommandEvent::Error(message)) => {
+                    let _ = child.kill();
+                    return Err(CliError::Spawn { message });
+                }
+                Some(CommandEvent::Terminated(_)) => {
+                    stdout_lines.flush(&mut on_line);
+                    return Ok(ProcessResult { stdout });
+                }
+                Some(_) => {}
+                None => {
+                    let _ = child.kill();
+                    return Err(CliError::NoOutput);
+                }
+            }
+        }
+    }
+}
+
 /// Runs `omnideck <args> --json`, returning the parsed stdout JSON value.
 ///
 /// Does not itself distinguish a "single value" response from an NDJSON
 /// stream — callers doing streaming commands (`add`/`update`/`remove`/`logs
-/// --follow`) should use the process directly instead; this helper is for
+/// --follow`) should use [`run_ndjson_stream`] instead; this helper is for
 /// the single-shot commands (`list`, `status`, `doctor`, `--version`, ...).
 async fn run_json<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     args: &[&str],
+    timeout_duration: Duration,
 ) -> Result<Value, CliError> {
     let mut full_args: Vec<&str> = args.to_vec();
     full_args.push("--json");
 
-    let output = sidecar_command(app)?
-        .args(&full_args)
-        .output()
-        .await
-        .map_err(|e| CliError::Spawn {
-            message: e.to_string(),
-        })?;
+    let result = run_cli(app, &full_args, timeout_duration, |_| {}).await?;
 
     // stdout is exclusively machine-readable under --json; stderr may carry
     // incidental warnings that are not part of the contract (JSON_MODE_SPEC
     // §1) — never merge the two streams.
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&result.stdout);
     let stdout = stdout.trim();
 
     if stdout.is_empty() {
@@ -199,7 +425,7 @@ pub struct VersionInfo {
 pub async fn version<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> Result<VersionInfo, CliError> {
-    let value = run_json(app, &["--version"]).await?;
+    let value = run_json(app, &["--version"], INSPECTION_TIMEOUT).await?;
     let info: VersionInfo = serde_json::from_value(value.clone()).map_err(|e| CliError::Parse {
         message: e.to_string(),
         raw: value.to_string(),
@@ -212,7 +438,200 @@ pub async fn version<R: tauri::Runtime>(
         });
     }
 
+    if !meets_minimum_version(&info.version, MINIMUM_CLI_VERSION) {
+        return Err(CliError::VersionTooOld {
+            minimum: MINIMUM_CLI_VERSION.to_string(),
+            actual: info.version.clone(),
+        });
+    }
+
     Ok(info)
+}
+
+/// `runtimeStatusPayload`'s schema version (`cmd/runtime.go` in the CLI
+/// repo) — independent of [`EXPECTED_JSON_CONTRACT`], see
+/// [`CliError::RuntimeSchemaMismatch`].
+pub const EXPECTED_RUNTIME_SCHEMA: u32 = 4;
+
+/// `runtime status`/`runtime ensure --json`'s shape — the *shared*, not
+/// per-instance, Podman runtime's readiness. Consumed by `bootstrap.rs`.
+/// Field shape confirmed directly against `cmd/runtime.go`'s
+/// `runtimeStatusPayload`, not assumed from docs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeStatus {
+    pub schema_version: u32,
+    pub runtime: String,
+    pub state: String,
+    pub ready: bool,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub warning: Option<String>,
+    #[serde(rename = "machineName", default)]
+    pub machine_name: Option<String>,
+    pub phase: String,
+    pub activity: String,
+    pub resources: RuntimeResources,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeResources {
+    pub container: RuntimeContainerResources,
+    pub machine: RuntimeMachineResources,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeContainerResources {
+    pub memory: String,
+    #[serde(rename = "shmSize")]
+    pub shm_size: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeMachineResources {
+    pub mode: String,
+    #[serde(default)]
+    pub cpus: Option<u32>,
+    #[serde(rename = "memoryMB", default)]
+    pub memory_mb: Option<u64>,
+    #[serde(rename = "diskGB", default)]
+    pub disk_gb: Option<u32>,
+}
+
+fn parse_runtime_status(value: Value) -> Result<RuntimeStatus, CliError> {
+    let status: RuntimeStatus =
+        serde_json::from_value(value.clone()).map_err(|e| CliError::Parse {
+            message: e.to_string(),
+            raw: value.to_string(),
+        })?;
+    if status.schema_version != EXPECTED_RUNTIME_SCHEMA {
+        return Err(CliError::RuntimeSchemaMismatch {
+            expected: EXPECTED_RUNTIME_SCHEMA,
+            actual: status.schema_version,
+        });
+    }
+    Ok(status)
+}
+
+/// `omnideck runtime status --json` — cheap, side-effect-free inspection of
+/// the shared Podman runtime. Never installs or starts anything; see
+/// [`runtime_ensure`] for that.
+pub async fn runtime_status<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Result<RuntimeStatus, CliError> {
+    let value = run_json(app, &["runtime", "status"], INSPECTION_TIMEOUT).await?;
+    parse_runtime_status(value)
+}
+
+/// One line of `runtime ensure --json`'s NDJSON progress stream when there's
+/// actual setup work to do — distinct from [`StreamEvent`] (`add`/`update`/
+/// `remove`'s shape): carries `activity`/`progress` instead of `result`.
+/// Modeled directly on the CLI's `runtimeSetupEventPayload` (`cmd/runtime.go`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeSetupEvent {
+    pub stage: String,
+    // No `state` field: the caller ([`runtime_ensure`]) already branches on
+    // the raw JSON's `state` (start/progress/done/error) before deciding
+    // whether to deserialize into this struct at all — only genuine
+    // progress lines ever reach it — so a `state` field here would always
+    // read `"start"`/`"progress"` and never be consumed. Serde silently
+    // ignores the extra JSON key, matching the CLI's own "consumers must
+    // ignore unknown fields" contract (`contracts/README.md`).
+    #[serde(default)]
+    pub activity: Option<String>,
+    #[serde(default)]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub progress: Option<f64>,
+}
+
+/// Runs `runtime ensure --json`, calling `on_event` for each progress line,
+/// and resolving to the final [`RuntimeStatus`]. Two real response shapes
+/// from the CLI, both handled here: if the runtime is already ready, this
+/// is a **single JSON value** (a bare `RuntimeStatus`, no envelope, no
+/// events) — the CLI has nothing to do and says so immediately. Otherwise
+/// it's an **NDJSON stream** of `RuntimeSetupEvent` lines (`stage` is
+/// `"software"` or `"environment"`, JSON_MODE_SPEC's shared progress shape)
+/// ending in `{"stage":"complete","state":"done","result":<RuntimeStatus>}`
+/// or a `state:"error"` line. `on_event` is only called for the two real
+/// progress stages, not the terminal complete/error envelope lines.
+pub async fn runtime_ensure<R, F>(
+    app: &tauri::AppHandle<R>,
+    mut on_event: F,
+) -> Result<RuntimeStatus, CliError>
+where
+    R: tauri::Runtime,
+    F: FnMut(RuntimeSetupEvent),
+{
+    let mut outcome: Option<Result<Value, CliError>> = None;
+
+    run_cli(
+        app,
+        &["runtime", "ensure", "--json"],
+        MUTATION_TIMEOUT,
+        |line| {
+            let parsed: Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(e) => {
+                    outcome = Some(Err(CliError::Parse {
+                        message: e.to_string(),
+                        raw: line.to_string(),
+                    }));
+                    return;
+                }
+            };
+
+            // A bare RuntimeStatus (already ready) has no "stage" field —
+            // NDJSON progress/envelope lines always do.
+            let Some(stage) = parsed.get("stage").and_then(Value::as_str) else {
+                outcome = Some(Ok(parsed));
+                return;
+            };
+
+            let state = parsed
+                .get("state")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+
+            if state == "error" {
+                if let Some(err_val) = parsed.get("error").cloned() {
+                    if let Ok(body) = serde_json::from_value::<ErrorBody>(err_val) {
+                        outcome = Some(Err(CliError::Cli(Box::new(CliErrorBody {
+                            code: body.code,
+                            message: body.message,
+                            hint: body.hint,
+                            action: body.action,
+                            action_value: body.action_value,
+                            instances: body.instances,
+                        }))));
+                    }
+                }
+                return;
+            }
+            if stage == "complete" && state == "done" {
+                outcome = Some(Ok(parsed.get("result").cloned().unwrap_or(Value::Null)));
+                return;
+            }
+
+            // A real "software"/"environment" progress line.
+            if let Ok(event) = serde_json::from_value::<RuntimeSetupEvent>(parsed) {
+                on_event(event);
+            }
+        },
+    )
+    .await?;
+
+    let value = outcome.unwrap_or(Err(CliError::NoOutput))?;
+    parse_runtime_status(value)
 }
 
 /// One row of `omnideck list --json`. The five live-stat fields plus
@@ -247,7 +666,7 @@ pub struct ListEntry {
 pub async fn list<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> Result<Vec<ListEntry>, CliError> {
-    let value = run_json(app, &["list"]).await?;
+    let value = run_json(app, &["list"], INSPECTION_TIMEOUT).await?;
     serde_json::from_value(value.clone()).map_err(|e| CliError::Parse {
         message: e.to_string(),
         raw: value.to_string(),
@@ -297,7 +716,7 @@ pub async fn status<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     name: &str,
 ) -> Result<InstanceStatus, CliError> {
-    let value = run_json(app, &["status", "--name", name]).await?;
+    let value = run_json(app, &["status", "--name", name], INSPECTION_TIMEOUT).await?;
     parse_instance_status(value)
 }
 
@@ -308,7 +727,7 @@ pub async fn start<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     name: &str,
 ) -> Result<InstanceStatus, CliError> {
-    let value = run_json(app, &["start", "--name", name]).await?;
+    let value = run_json(app, &["start", "--name", name], INSPECTION_TIMEOUT).await?;
     parse_instance_status(value)
 }
 
@@ -316,7 +735,7 @@ pub async fn stop<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     name: &str,
 ) -> Result<InstanceStatus, CliError> {
-    let value = run_json(app, &["stop", "--name", name]).await?;
+    let value = run_json(app, &["stop", "--name", name], INSPECTION_TIMEOUT).await?;
     parse_instance_status(value)
 }
 
@@ -324,7 +743,7 @@ pub async fn restart<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     name: &str,
 ) -> Result<InstanceStatus, CliError> {
-    let value = run_json(app, &["restart", "--name", name]).await?;
+    let value = run_json(app, &["restart", "--name", name], INSPECTION_TIMEOUT).await?;
     parse_instance_status(value)
 }
 
@@ -358,7 +777,7 @@ pub async fn doctor<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     name: &str,
 ) -> Result<DoctorResult, CliError> {
-    let value = run_json(app, &["doctor", "--name", name]).await?;
+    let value = run_json(app, &["doctor", "--name", name], INSPECTION_TIMEOUT).await?;
     serde_json::from_value(value.clone()).map_err(|e| CliError::Parse {
         message: e.to_string(),
         raw: value.to_string(),
@@ -390,7 +809,7 @@ pub async fn config<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     name: &str,
 ) -> Result<ConfigInfo, CliError> {
-    let value = run_json(app, &["config", "show", "--name", name]).await?;
+    let value = run_json(app, &["config", "show", "--name", name], INSPECTION_TIMEOUT).await?;
     serde_json::from_value(value.clone()).map_err(|e| CliError::Parse {
         message: e.to_string(),
         raw: value.to_string(),
@@ -410,7 +829,12 @@ pub async fn logs<R: tauri::Runtime>(
     tail: u32,
 ) -> Result<LogsResult, CliError> {
     let tail_arg = tail.to_string();
-    let value = run_json(app, &["logs", "--name", name, "--tail", &tail_arg]).await?;
+    let value = run_json(
+        app,
+        &["logs", "--name", name, "--tail", &tail_arg],
+        INSPECTION_TIMEOUT,
+    )
+    .await?;
     serde_json::from_value(value.clone()).map_err(|e| CliError::Parse {
         message: e.to_string(),
         raw: value.to_string(),
@@ -436,62 +860,47 @@ pub struct StreamEvent {
 /// is always exactly one of `stage:"complete",state:"done"` (success,
 /// carries `result`) or any `state:"error"` (carries the standard error
 /// envelope) — nothing follows either, so seeing one ends the read loop.
+/// Built on [`run_cli`], so it inherits bounded output, a timeout, and
+/// correct line reassembly across chunk boundaries for free.
 async fn run_ndjson_stream<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     args: &[&str],
     event_name: &str,
+    timeout_duration: Duration,
 ) -> Result<Value, CliError> {
-    let (mut rx, _child) =
-        sidecar_command(app)?
-            .args(args)
-            .spawn()
-            .map_err(|e| CliError::Spawn {
-                message: e.to_string(),
-            })?;
-
     let mut outcome: Option<Result<Value, CliError>> = None;
 
-    while let Some(event) = rx.recv().await {
-        let CommandEvent::Stdout(bytes) = event else {
-            continue;
+    run_cli(app, args, timeout_duration, |line| {
+        let parsed: StreamEvent = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(e) => {
+                outcome = Some(Err(CliError::Parse {
+                    message: e.to_string(),
+                    raw: line.to_string(),
+                }));
+                return;
+            }
         };
-        let text = String::from_utf8_lossy(&bytes);
-        for line in text.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
+        let _ = app.emit(event_name, &parsed);
 
-            let parsed: StreamEvent = match serde_json::from_str(line) {
-                Ok(v) => v,
-                Err(e) => {
-                    outcome = Some(Err(CliError::Parse {
-                        message: e.to_string(),
-                        raw: line.to_string(),
-                    }));
-                    continue;
+        if parsed.state == "error" {
+            if let Some(err_val) = parsed.error.clone() {
+                if let Ok(body) = serde_json::from_value::<ErrorBody>(err_val) {
+                    outcome = Some(Err(CliError::Cli(Box::new(CliErrorBody {
+                        code: body.code,
+                        message: body.message,
+                        hint: body.hint,
+                        action: body.action,
+                        action_value: body.action_value,
+                        instances: body.instances,
+                    }))));
                 }
-            };
-            let _ = app.emit(event_name, &parsed);
-
-            if parsed.state == "error" {
-                if let Some(err_val) = parsed.error.clone() {
-                    if let Ok(body) = serde_json::from_value::<ErrorBody>(err_val) {
-                        outcome = Some(Err(CliError::Cli(Box::new(CliErrorBody {
-                            code: body.code,
-                            message: body.message,
-                            hint: body.hint,
-                            action: body.action,
-                            action_value: body.action_value,
-                            instances: body.instances,
-                        }))));
-                    }
-                }
-            } else if parsed.stage == "complete" && parsed.state == "done" {
-                outcome = Some(Ok(parsed.result.clone().unwrap_or(Value::Null)));
             }
+        } else if parsed.stage == "complete" && parsed.state == "done" {
+            outcome = Some(Ok(parsed.result.clone().unwrap_or(Value::Null)));
         }
-    }
+    })
+    .await?;
 
     outcome.unwrap_or(Err(CliError::NoOutput))
 }
@@ -508,7 +917,7 @@ pub struct AddSuggestion {
 pub async fn suggest_defaults<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
 ) -> Result<AddSuggestion, CliError> {
-    let value = run_json(app, &["add", "--suggest-defaults"]).await?;
+    let value = run_json(app, &["add", "--suggest-defaults"], INSPECTION_TIMEOUT).await?;
     serde_json::from_value(value.clone()).map_err(|e| CliError::Parse {
         message: e.to_string(),
         raw: value.to_string(),
@@ -537,7 +946,7 @@ pub async fn add<R: tauri::Runtime>(
         args.push("--memory");
         args.push(memory);
     }
-    let value = run_ndjson_stream(app, &args, "add-progress").await?;
+    let value = run_ndjson_stream(app, &args, "add-progress", MUTATION_TIMEOUT).await?;
     parse_instance_status(value)
 }
 
@@ -553,6 +962,7 @@ pub async fn update<R: tauri::Runtime>(
         app,
         &["update", "--name", name, "--json"],
         "update-progress",
+        MUTATION_TIMEOUT,
     )
     .await?;
     parse_instance_status(value)
@@ -602,7 +1012,7 @@ pub async fn remove<R: tauri::Runtime>(
         });
     }
 
-    let value = run_ndjson_stream(app, &args, "remove-progress").await?;
+    let value = run_ndjson_stream(app, &args, "remove-progress", MUTATION_TIMEOUT).await?;
     serde_json::from_value(value.clone()).map_err(|e| CliError::Parse {
         message: e.to_string(),
         raw: value.to_string(),
@@ -612,6 +1022,39 @@ pub async fn remove<R: tauri::Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_is_bounded() {
+        let mut output = Vec::new();
+        append_bounded(&mut output, &[b'a'; 4], 5, "stdout").unwrap();
+        append_bounded(&mut output, b"b", 5, "stdout").unwrap();
+        let error = append_bounded(&mut output, b"c", 5, "stdout").unwrap_err();
+        assert!(matches!(
+            error,
+            CliError::OutputLimitExceeded { stream } if stream == "stdout"
+        ));
+    }
+
+    #[test]
+    fn json_lines_are_reassembled_across_process_chunks() {
+        let mut buffer = LineBuffer::default();
+        let mut lines = Vec::new();
+        buffer.push(br#"{"stage":"pull"#, &mut |line| {
+            lines.push(line.to_owned())
+        });
+        buffer.push(b"_image\"}\r\n{\"stage\":\"start", &mut |line| {
+            lines.push(line.to_owned())
+        });
+        buffer.push(b"_container\"}", &mut |line| lines.push(line.to_owned()));
+        buffer.flush(&mut |line| lines.push(line.to_owned()));
+        assert_eq!(
+            lines,
+            [
+                r#"{"stage":"pull_image"}"#,
+                r#"{"stage":"start_container"}"#
+            ]
+        );
+    }
 
     /// The frontend's TS union expects the error envelope's fields flattened
     /// alongside `"kind":"cli"` (see src/types/cli.ts) — pins that serde's
@@ -711,6 +1154,116 @@ mod tests {
         assert_eq!(result.checks.len(), 2);
         assert_eq!(result.checks[1].action.as_deref(), Some("start_instance"));
         assert_eq!(result.checks[0].action, None);
+    }
+
+    /// Pins the exact string the real bundled `v0.10.0` sidecar reports
+    /// (verified directly against a downloaded release binary, not assumed)
+    /// so a future contract/version bump can't silently drift this fixture.
+    #[test]
+    fn version_info_parses_the_real_v0_10_0_shape() {
+        let raw = r#"{"version":"v0.10.0","commit":"e51b53de304d","date":"2026-08-08T16:43:12Z","jsonContract":2}"#;
+        let info: VersionInfo = serde_json::from_str(raw).unwrap();
+        assert_eq!(info.version, "v0.10.0");
+        assert_eq!(info.json_contract, EXPECTED_JSON_CONTRACT);
+        assert!(meets_minimum_version(&info.version, MINIMUM_CLI_VERSION));
+    }
+
+    #[test]
+    fn minimum_version_floor_accepts_equal_and_newer() {
+        assert!(meets_minimum_version("v0.10.0", "v0.10.0"));
+        assert!(meets_minimum_version("v0.10.1", "v0.10.0"));
+        assert!(meets_minimum_version("v0.11.0", "v0.10.0"));
+        assert!(meets_minimum_version("v1.0.0", "v0.10.0"));
+    }
+
+    #[test]
+    fn minimum_version_floor_rejects_older_and_prerelease_of_the_floor() {
+        assert!(!meets_minimum_version("v0.9.1", "v0.10.0"));
+        assert!(!meets_minimum_version("v0.10.0-alpha.2", "v0.10.0"));
+        assert!(!meets_minimum_version("not-a-version", "v0.10.0"));
+    }
+
+    /// Canned fixture straight from a real `runtime status --json` run
+    /// against this host's actual podman install (host-native mode, no
+    /// managed machine) — captured directly, not invented.
+    #[test]
+    fn runtime_status_parses_the_real_host_native_shape() {
+        let raw = serde_json::json!({
+            "schemaVersion": 4,
+            "runtime": "podman",
+            "state": "ready",
+            "ready": true,
+            "path": "/usr/bin/podman",
+            "version": "5.8.4",
+            "phase": "environment",
+            "activity": "Preparing a secure space to run in…",
+            "resources": {
+                "container": {"memory": "6g", "shmSize": "3072m"},
+                "machine": {"mode": "host-native"}
+            }
+        });
+        let status = parse_runtime_status(raw).unwrap();
+        assert!(status.ready);
+        assert_eq!(status.resources.machine.mode, "host-native");
+        assert_eq!(status.resources.machine.memory_mb, None);
+    }
+
+    #[test]
+    fn runtime_status_rejects_wrong_schema() {
+        let raw = serde_json::json!({
+            "schemaVersion": 5,
+            "runtime": "podman",
+            "state": "ready",
+            "ready": true,
+            "phase": "environment",
+            "activity": "x",
+            "resources": {
+                "container": {"memory": "2g", "shmSize": "1g"},
+                "machine": {"mode": "host-native"}
+            }
+        });
+        let error = parse_runtime_status(raw).unwrap_err();
+        assert!(matches!(
+            error,
+            CliError::RuntimeSchemaMismatch {
+                expected: 4,
+                actual: 5
+            }
+        ));
+    }
+
+    /// Fixture from `cmd/runtime.go`'s `runtimeStatusPayload` for the
+    /// "missing" case — `phase` switches to `"software"` before Podman
+    /// exists at all.
+    #[test]
+    fn runtime_status_missing_uses_the_software_phase() {
+        let raw = serde_json::json!({
+            "schemaVersion": 4,
+            "runtime": "podman",
+            "state": "missing",
+            "ready": false,
+            "phase": "software",
+            "activity": "Getting your computer ready…",
+            "resources": {
+                "container": {"memory": "2g", "shmSize": "1g"},
+                "machine": {"mode": "podman-managed", "cpus": 4, "memoryMB": 4096, "diskGB": 40}
+            }
+        });
+        let status = parse_runtime_status(raw).unwrap();
+        assert!(!status.ready);
+        assert_eq!(status.phase, "software");
+        assert_eq!(status.resources.machine.memory_mb, Some(4096));
+    }
+
+    /// Fixture matching `cmd/runtime.go`'s `runtimeSetupEventPayload` shape
+    /// for a real in-progress line (not the terminal complete/error).
+    #[test]
+    fn runtime_setup_event_parses_a_progress_line() {
+        let raw = r#"{"stage":"software","state":"progress","activity":"Getting your computer ready…","detail":"Downloading Podman…","progress":0.4}"#;
+        let event: RuntimeSetupEvent = serde_json::from_str(raw).unwrap();
+        assert_eq!(event.stage, "software");
+        assert_eq!(event.detail.as_deref(), Some("Downloading Podman…"));
+        assert_eq!(event.progress, Some(0.4));
     }
 
     /// Canned fixture from a real `config show --name demo --json` run.

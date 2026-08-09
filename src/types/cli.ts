@@ -119,7 +119,8 @@ export type CliError =
       actionValue?: string;
       instances?: string[];
     }
-  | { kind: "contract_mismatch"; expected: number; actual: number };
+  | { kind: "contract_mismatch"; expected: number; actual: number }
+  | { kind: "version_too_old"; minimum: string; actual: string };
 
 export function cliErrorSummary(err: CliError): string {
   switch (err.kind) {
@@ -133,5 +134,7 @@ export function cliErrorSummary(err: CliError): string {
       return err.message;
     case "contract_mismatch":
       return `This app build expects omnideck CLI contract v${err.expected}, but found v${err.actual}.`;
+    case "version_too_old":
+      return `This app requires omnideck CLI ${err.minimum} or newer, but found ${err.actual}.`;
   }
 }

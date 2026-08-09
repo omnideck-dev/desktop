@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Omnideck Setup</title>
+    <link rel="stylesheet" href="./setup.css" />
+  </head>
+  <body>
+    <main class="panel" aria-live="polite">
+      <div class="identity">
+        <div class="mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <p class="brand">omnideck</p>
+      </div>
+
+      <div class="status">
+        <!-- Neutral until the first state arrives — this window can be shown
+             before bootstrap's first round-trip completes, so committing to
+             "Welcome" copy here would be a lie the moment it renders. -->
+        <p id="eyebrow" class="eyebrow">STARTING</p>
+        <h1 id="title">Starting Omnideck</h1>
+        <p id="detail" class="detail">Checking your environment…</p>
+
+        <p id="activity" class="activity" aria-live="polite" hidden></p>
+
+        <section id="diagnostics" class="diagnostics" hidden>
+          <div class="diagnostics__heading">
+            <span>DIAGNOSTICS</span>
+          </div>
+          <div id="diagnostic-list" class="diagnostic-list"></div>
+          <details>
+            <summary>Technical details</summary>
+            <pre id="technical-output"></pre>
+          </details>
+        </section>
+
+        <div id="progress-wrap" class="progress-wrap" hidden>
+          <div
+            class="progress-track"
+            role="progressbar"
+            aria-label="Setup progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <div id="progress" class="progress"></div>
+          </div>
+        </div>
+
+        <div id="spinner" class="spinner" aria-label="Working" hidden></div>
+
+        <button id="primary" class="primary" type="button" hidden></button>
+        <button id="secondary" class="secondary" type="button" hidden></button>
+        <p id="action-error" class="action-error" role="alert" hidden></p>
+      </div>
+
+      <p id="footnote" class="footnote" hidden>
+        This only needs to happen once.
+      </p>
+    </main>
+    <script src="./host-adapter.js"></script>
+    <script src="./setup.js"></script>
+  </body>
+</html>

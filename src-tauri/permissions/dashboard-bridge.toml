@@ -1,0 +1,24 @@
+# The enumerated command surface the dashboard window ("main") may invoke.
+# Not "read-only" — unlike the sibling app's onboarding bridge, the
+# dashboard genuinely needs mutating commands (add/remove/start/stop/...).
+# Keep this list in exact sync with commands.rs's `invoke_handler!` in
+# lib.rs — a command added there and not here is simply unreachable from the
+# frontend, which is the fail-safe direction for this list to drift in.
+[[permission]]
+identifier = "dashboard-bridge"
+description = "Allows the dashboard window to drive Deck lifecycle actions through the bundled omnideck CLI."
+commands.allow = [
+  "list_instances",
+  "cli_version_contract",
+  "instance_status",
+  "instance_logs",
+  "start_instance",
+  "stop_instance",
+  "restart_instance",
+  "update_instance",
+  "instance_doctor",
+  "instance_config",
+  "suggest_new_deck_defaults",
+  "add_instance",
+  "remove_instance",
+]
