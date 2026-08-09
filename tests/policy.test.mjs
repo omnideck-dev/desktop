@@ -1,16 +1,26 @@
-// Security-posture assertions for the isolated onboarding window and the
-// dashboard's capability allowlist — ported from the sibling repo's
-// tests/policy.test.mjs, keeping only the security-assertion half. The
-// byte-for-byte-Electron-parity half is intentionally not ported: there's
-// no Electron app here to diff against, and this repo isn't diffing against
-// the sibling either (which is itself post-Electron) — see
-// reference/desktop-hardening-migration-PLAN.md's "Explicitly NOT being
-// ported".
+// Security-posture assertions for the dashboard's capability allowlist —
+// ported from the sibling repo's tests/policy.test.mjs, keeping only the
+// security-assertion half. The byte-for-byte-Electron-parity half is
+// intentionally not ported: there's no Electron app here to diff against,
+// and this repo isn't diffing against the sibling either (which is itself
+// post-Electron) — see reference/desktop-hardening-migration-PLAN.md's
+// "Explicitly NOT being ported".
+//
+// Onboarding used to run from a second, isolated "onboarding" window with
+// its own capability grant — reverted to a single "main" window (React
+// screen-swap instead of a window swap) after a real EGL/GPU-driver bug was
+// root-caused to the two-window-at-startup pattern itself (see
+// bootstrap.rs's doc comment and reference/desktop-hardening-migration-PLAN.md's
+// "Decisions from review" for the full history). The onboarding-specific
+// isolation tests that used to live here no longer apply — there's no
+// second window or capability left to isolate — but the dashboard-bridge
+// allowlist assertions below now also cover the 3 bootstrap commands folded
+// into it.
 //
 // These assertions exist so a future PR can't silently widen the attack
 // surface (a broader capability grant, a new command added to an allowlist
-// without review, `"main"` used where `"onboarding"` was meant) without a
-// test failing.
+// without review, a command handler skipping the window-origin check) without
+// a test failing.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -20,14 +30,12 @@ const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
 const packageJson = JSON.parse(await read("../package.json"));
 const tauriConf = JSON.parse(await read("../src-tauri/tauri.conf.json"));
 const dashboardCapability = JSON.parse(await read("../src-tauri/capabilities/default.json"));
-const onboardingCapability = JSON.parse(await read("../src-tauri/capabilities/onboarding.json"));
 const dashboardPermission = await read("../src-tauri/permissions/dashboard-bridge.toml");
-const onboardingPermission = await read("../src-tauri/permissions/onboarding-bridge.toml");
 const vendor = JSON.parse(await read("../src-tauri/binaries/vendor-manifest.json"));
 const libRust = await read("../src-tauri/src/lib.rs");
 const bootstrapRust = await read("../src-tauri/src/bootstrap.rs");
 const cliBridgeRust = await read("../src-tauri/src/cli_bridge.rs");
-const hostAdapter = await read("../public/onboarding/host-adapter.js");
+const useBootstrapTs = await read("../src/hooks/useBootstrap.ts");
 
 test("bundles exactly one target-qualified logical sidecar", () => {
   assert.deepEqual(tauriConf.bundle.externalBin, ["binaries/omnideck"]);
@@ -42,39 +50,26 @@ test("bundles exactly one target-qualified logical sidecar", () => {
   ]);
 });
 
+test("there is exactly one window, and no withGlobalTauri escape hatch", () => {
+  // withGlobalTauri existed only for the old vanilla-JS onboarding window
+  // (window.__TAURI__, no bundler). The React app imports @tauri-apps/api
+  // properly, so re-adding it would just widen what any loaded content can
+  // reach for no reason.
+  assert.deepEqual(
+    tauriConf.app.windows.map((w) => w.label),
+    ["main"],
+  );
+  assert.equal(tauriConf.app.withGlobalTauri, undefined);
+});
+
 test("dashboard capability is an enumerated allowlist, not core:default", () => {
   assert.deepEqual(dashboardCapability.windows, ["main"]);
-  assert.equal(dashboardCapability.windows.includes("onboarding"), false);
   assert.ok(dashboardCapability.permissions.includes("dashboard-bridge"));
   assert.equal(dashboardCapability.permissions.includes("core:default"), false);
   assert.doesNotMatch(
     JSON.stringify(dashboardCapability),
     /shell:|process:|fs:|updater:|dialog:/i,
   );
-});
-
-test("onboarding capability is local, scoped to \"onboarding\" only, and never \"main\"", () => {
-  // The regression this guards against is specific and easy to reintroduce
-  // by copy-paste from the sibling app: there, "main" *is* the setup
-  // window, so its capability correctly says "main". Here "main" is the
-  // dashboard — if this capability ever says "main" instead of
-  // "onboarding", the bridge silently grants the wrong window instead of
-  // the isolated one, or grants nothing at all.
-  assert.equal(onboardingCapability.local, true);
-  assert.deepEqual(onboardingCapability.windows, ["onboarding"]);
-  assert.equal(onboardingCapability.windows.includes("main"), false);
-  // Check the permissions grant specifically, not the whole file — the
-  // capability's own description text legitimately mentions "core:"/
-  // "opener:" while explaining their absence.
-  assert.deepEqual(onboardingCapability.permissions, ["onboarding-bridge"]);
-});
-
-test("onboarding permission exposes only the four typed lifecycle commands", () => {
-  assert.match(
-    onboardingPermission,
-    /commands\.allow = \["bootstrap", "begin_setup", "open_dashboard", "run_action"\]/,
-  );
-  assert.doesNotMatch(onboardingPermission, /spawn|execute|shell|filesystem|process/i);
 });
 
 test("dashboard permission's command list matches lib.rs's invoke_handler exactly", () => {
@@ -93,60 +88,63 @@ test("dashboard permission's command list matches lib.rs's invoke_handler exactl
     "suggest_new_deck_defaults",
     "add_instance",
     "remove_instance",
+    "bootstrap",
+    "begin_setup",
+    "run_action",
   ];
   assert.deepEqual(declared.sort(), [...dashboardCommands].sort());
   for (const command of dashboardCommands) {
     assert.match(
       libRust,
-      new RegExp(`commands::${command}\\b`),
+      new RegExp(`(commands::${command}|bootstrap::${command})\\b`),
       `${command} must be registered in lib.rs's invoke_handler!`,
     );
   }
+  // "open_dashboard" was the isolated onboarding window's window-swap
+  // command — there's nothing left for it to do once there's only one
+  // window, so it was removed rather than kept as a no-op.
+  assert.doesNotMatch(dashboardPermission, /open_dashboard/);
+  assert.doesNotMatch(libRust, /open_dashboard/);
 });
 
-test("onboarding's IPC surface only calls its four allowed commands", () => {
-  const invoked = [...hostAdapter.matchAll(/run\("([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(invoked)].sort(), [
-    "begin_setup",
-    "bootstrap",
-    "open_dashboard",
-    "run_action",
-  ]);
-  assert.doesNotMatch(hostAdapter, /plugin-shell|Command\.sidecar|executable|argv|workingDirectory/);
+test("the frontend only calls bootstrap's three commands, never a shell/process API", () => {
+  const invoked = [...useBootstrapTs.matchAll(/invoke(?:WithChannel)?\(\s*"([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(invoked)].sort(), ["begin_setup", "bootstrap", "run_action"]);
+  assert.doesNotMatch(useBootstrapTs, /plugin-shell|Command\.sidecar|executable|argv|workingDirectory/);
 });
 
-test("every onboarding command authorizes window.label() == \"onboarding\", never \"main\"", () => {
-  assert.match(bootstrapRust, /fn authorize_onboarding\(window: &WebviewWindow\)/);
-  assert.match(bootstrapRust, /window\.label\(\) != "onboarding"/);
-  // The exact bug this repo's own review caught: copying the sibling's
-  // `window.label() != "main"` literally would authorize the wrong window,
-  // since "main" is the dashboard here.
-  assert.doesNotMatch(bootstrapRust, /window\.label\(\) != "main"/);
+test("every bootstrap command authorizes window.label() == \"main\"", () => {
+  assert.match(bootstrapRust, /fn authorize_main\(window: &WebviewWindow\)/);
+  assert.match(bootstrapRust, /window\.label\(\) != "main"/);
+  for (const command of ["bootstrap", "begin_setup", "run_action"]) {
+    const fn = bootstrapRust.match(new RegExp(`pub (?:async )?fn ${command}\\([\\s\\S]*?\\n\\}`));
+    assert.ok(fn, `expected to find ${command}()`);
+    assert.match(fn[0], /authorize_main\(&window\)\?/, `${command} must call authorize_main`);
+  }
 });
 
-test("bootstrap only reveals the onboarding window when setup is actually needed", () => {
-  // A narrow, deliberately fragile regex: extracts the `Ok(status) if
-  // status.ready` match arm's body and asserts it does NOT call
-  // show_onboarding. This is the exact shape of a real regression this
-  // session found and fixed — bootstrap() unconditionally showing
-  // onboarding on every launch, even when the runtime was already ready.
-  const readyArm = bootstrapRust.match(
-    /Ok\(status\) if status\.ready => \{([\s\S]*?)\}\n\s*Ok\(_\)/,
-  );
-  assert.ok(readyArm, "expected to find bootstrap()'s ready match arm");
-  assert.doesNotMatch(readyArm[1], /show_onboarding/);
+test("bootstrap.rs no longer manages window visibility", () => {
+  // The regression this guards against is the one this repo actually hit: a
+  // second, initially-hidden window created at startup broke EGL/GPU-driver
+  // init on at least one real Intel/Mesa combination. Asserting the
+  // window-management surface is gone (not just unused) keeps it from
+  // creeping back in as part of some future onboarding tweak.
+  for (const symbol of [
+    "show_onboarding",
+    "show_dashboard",
+    "create_onboarding_window",
+    "WebviewWindowBuilder",
+    "WebviewUrl",
+  ]) {
+    assert.doesNotMatch(bootstrapRust, new RegExp(symbol), `${symbol} should not reappear in bootstrap.rs`);
+  }
 });
 
-test("the onboarding window is created hidden by default", () => {
-  assert.match(bootstrapRust, /"onboarding",\s*\n\s*WebviewUrl::App\("onboarding\/index\.html"\.into\(\)\)/);
-  assert.match(bootstrapRust, /\.visible\(false\)/);
-});
-
-test("single-instance plugin is registered first and picks onboarding over main when visible", () => {
+test("single-instance plugin is registered first and focuses the single main window", () => {
   const pluginOrder = [...libRust.matchAll(/\.plugin\((\w[\w:]*)/g)].map((m) => m[1]);
   assert.equal(pluginOrder[0], "tauri_plugin_single_instance::init");
-  assert.match(libRust, /get_webview_window\("onboarding"\)/);
-  assert.match(libRust, /filter\(\|window\| window\.is_visible\(\)\.unwrap_or\(false\)\)/);
+  assert.match(libRust, /get_webview_window\("main"\)/);
+  assert.doesNotMatch(libRust, /get_webview_window\("onboarding"\)/);
 });
 
 test("CLI sidecar is pinned by version + checksum for all six targets, floor-checked not exact-matched", () => {

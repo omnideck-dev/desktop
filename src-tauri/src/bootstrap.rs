@@ -1,8 +1,8 @@
 //! Drives the *shared* (not per-instance) Podman runtime's first-run/repair
-//! bootstrap, and owns the 4-command IPC surface the isolated "onboarding"
-//! window uses to run it — modeled on `omnideck/desktop` (sibling repo)'s
-//! setup flow, adapted per `reference/desktop-hardening-migration-PLAN.md`'s
-//! Phase 5.
+//! bootstrap, and owns the 3-command IPC surface (`bootstrap`/`begin_setup`/
+//! `run_action`) the dashboard's React app uses to run it — modeled on
+//! `omnideck/desktop` (sibling repo)'s setup flow, adapted per
+//! `reference/desktop-hardening-migration-PLAN.md`'s Phase 5.
 //!
 //! Correcting this repo's earlier assumption (see AGENT.md): the CLI does
 //! have an equivalent for "detect/install podman, WSL2, podman machine" as
@@ -11,6 +11,27 @@
 //! ([`cli_bridge::runtime_ensure`]), translating its `stage`/`activity`/
 //! error-code vocabulary into [`SetupState`] — it does not reimplement any
 //! platform-specific installer logic itself.
+//!
+//! **No separate window** (a real change from an earlier version of this
+//! module, not the original design): onboarding was originally an isolated
+//! window, hidden until needed, mirroring the sibling's `hosted-app`/setup
+//! window split. That caused a real, confirmed bug — creating two GTK/
+//! WebKit windows at startup (one hidden) failed EGL/GPU-driver
+//! initialization on at least one real Intel/Mesa combination, with a
+//! blank white dashboard as the symptom, and was independently reproduced
+//! in the sibling repo's own build too (same two-window-at-startup
+//! pattern). Fixed by dropping the second window entirely: `bootstrap`/
+//! `begin_setup`/`run_action` now run from the single `"main"` window, and
+//! `src/components/OnboardingView.tsx` / `DashboardView.tsx` are just two
+//! screens React swaps between based on the pushed [`SetupState`] — no
+//! window to show or hide, so no `open_dashboard` command either. This is
+//! a real, knowingly-accepted security tradeoff: these commands are no
+//! longer isolated from the dashboard's own broader command surface the
+//! way a separate window's capability grant would enforce. What's kept:
+//! the state machine itself, and the server-side offered-actions allowlist
+//! (`run_action` only accepts what the *last pushed state* actually
+//! offered) — see `reference/desktop-hardening-migration-PLAN.md`'s
+//! "Decisions from review" for the full history of this decision.
 //!
 //! Scope boundary: this module's job ends once the shared runtime is ready.
 //! Creating a Deck (pulling the omnideck image, provisioning a container) is
@@ -36,7 +57,7 @@ use std::{
         Arc, RwLock,
     },
 };
-use tauri::{ipc::Channel, AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{ipc::Channel, AppHandle, WebviewWindow};
 
 /// Phases in weighted-progress order, matching `runtime ensure`'s own stage
 /// vocabulary exactly (`engine.SetupStageSoftware`/`SetupStageEnvironment`
@@ -69,10 +90,11 @@ pub struct Diagnostic {
     pub status: String,
 }
 
-/// Pushed from Rust to the onboarding webview over a Tauri [`Channel`]. One
-/// `render(state)`-style function on the JS side fully re-derives the DOM
-/// from each pushed state — see `public/onboarding/setup.js`. Modeled on the
-/// sibling's `SetupState` in `parity.rs`.
+/// Pushed from Rust to the dashboard's React app over a Tauri [`Channel`].
+/// `OnboardingView`'s `render(state)`-style logic fully re-derives what it
+/// shows from each pushed state; `App.tsx` decides whether to render
+/// `OnboardingView` or `DashboardView` based on `stage`/`canOpen`. Modeled
+/// on the sibling's `SetupState` in `parity.rs`.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SetupState {
@@ -245,24 +267,23 @@ fn error_state(error: &CliError, reached_phase: usize) -> SetupState {
     state
 }
 
-/// Every failure mode of the 4 onboarding commands themselves — distinct
+/// Every failure mode of the 3 bootstrap commands themselves — distinct
 /// from [`CliError`] (which is specifically about CLI subprocess failures),
-/// since these also cover the window-authorization and action-allowlist
-/// checks that have nothing to do with the CLI.
+/// since these also cover the origin and action-allowlist checks that have
+/// nothing to do with the CLI.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BootstrapError {
-    /// The caller wasn't the isolated "onboarding" window — the whole point
-    /// of Phase 2's capability split is that this bridge isn't reachable
-    /// from the dashboard or any instance webview.
+    /// The caller wasn't the `"main"` window. With no separate onboarding
+    /// window left to enforce this via a capability grant, this check is
+    /// the only remaining guard — see this module's doc comment for why
+    /// that's a real, accepted tradeoff, not an oversight.
     OriginDenied,
     Cli(CliError),
-    /// The requested `run_action`/`open_dashboard` wasn't in the *current*
-    /// state's offered actions (or, for `open_dashboard`, setup isn't
-    /// actually done yet) — stops a compromised/buggy webview invoking
-    /// something the current state never offered.
+    /// The requested `run_action` wasn't in the *current* state's offered
+    /// actions — stops a compromised/buggy webview invoking something the
+    /// current state never offered.
     ActionDenied,
-    WindowMissing,
     StateLockPoisoned,
     StateDeliveryFailed,
 }
@@ -273,8 +294,8 @@ impl From<CliError> for BootstrapError {
     }
 }
 
-fn authorize_onboarding(window: &WebviewWindow) -> Result<(), BootstrapError> {
-    if window.label() != "onboarding" {
+fn authorize_main(window: &WebviewWindow) -> Result<(), BootstrapError> {
+    if window.label() != "main" {
         return Err(BootstrapError::OriginDenied);
     }
     Ok(())
@@ -283,7 +304,6 @@ fn authorize_onboarding(window: &WebviewWindow) -> Result<(), BootstrapError> {
 #[derive(Clone)]
 pub struct BootstrapState {
     setup_running: Arc<AtomicBool>,
-    ready: Arc<AtomicBool>,
     offered_actions: Arc<RwLock<HashSet<String>>>,
 }
 
@@ -291,7 +311,6 @@ impl Default for BootstrapState {
     fn default() -> Self {
         Self {
             setup_running: Arc::new(AtomicBool::new(false)),
-            ready: Arc::new(AtomicBool::new(false)),
             offered_actions: Arc::new(RwLock::new(HashSet::new())),
         }
     }
@@ -302,7 +321,6 @@ fn send_state(
     channel: &Channel<SetupState>,
     setup_state: SetupState,
 ) -> Result<(), BootstrapError> {
-    state.ready.store(setup_state.can_open, Ordering::Release);
     let mut actions = state
         .offered_actions
         .write()
@@ -360,17 +378,11 @@ fn debug_forced_state() -> Option<SetupState> {
 }
 
 /// Checks the shared runtime once and reports whether onboarding needs to
-/// run — called by the onboarding window's own script on load, mirroring
-/// the sibling's `setup.js` calling `bootstrap` immediately. Never mutates
-/// anything.
-///
-/// Only reveals the onboarding window when it's actually needed (not ready,
-/// or the check itself failed) — the dashboard (`"main"`) is already
-/// visible by default on every launch (AGENT.md's rule, unchanged by any of
-/// this), so the ready case must do nothing further and leave onboarding
-/// hidden. Getting this wrong would mean onboarding popping up on *every*
-/// launch even when the runtime is already ready, which defeats the entire
-/// point of checking first.
+/// run — called by the dashboard's React app on mount, mirroring the
+/// sibling's `setup.js` calling `bootstrap` immediately (just from the
+/// dashboard's own window now, not a separate one). Never mutates anything.
+/// The frontend decides what to render purely from the pushed
+/// [`SetupState`] — this command doesn't show or hide anything itself.
 #[tauri::command]
 pub async fn bootstrap(
     app: AppHandle,
@@ -378,11 +390,10 @@ pub async fn bootstrap(
     state: tauri::State<'_, BootstrapState>,
     on_event: Channel<SetupState>,
 ) -> Result<(), BootstrapError> {
-    authorize_onboarding(&window)?;
+    authorize_main(&window)?;
 
     if let Some(forced) = debug_forced_state() {
         send_state(&state, &on_event, forced)?;
-        show_onboarding(&app)?;
         return Ok(());
     }
 
@@ -392,17 +403,15 @@ pub async fn bootstrap(
         }
         Ok(_) => {
             send_state(&state, &on_event, welcome_state())?;
-            show_onboarding(&app)?;
         }
         Err(error) => {
             send_state(&state, &on_event, error_state(&error, 0))?;
-            show_onboarding(&app)?;
         }
     }
     Ok(())
 }
 
-/// Drives `runtime ensure`, streaming progress into the onboarding window
+/// Drives `runtime ensure`, streaming progress to the dashboard's React app
 /// until the shared runtime is ready or setup fails. Re-entrant calls while
 /// already running are ignored (matches the sibling's `setup_running` swap).
 #[tauri::command]
@@ -412,7 +421,7 @@ pub async fn begin_setup(
     state: tauri::State<'_, BootstrapState>,
     on_event: Channel<SetupState>,
 ) -> Result<(), BootstrapError> {
-    authorize_onboarding(&window)?;
+    authorize_main(&window)?;
     if state.setup_running.swap(true, Ordering::AcqRel) {
         return Ok(());
     }
@@ -464,23 +473,6 @@ pub async fn begin_setup(
     Ok(())
 }
 
-/// Hands off to the dashboard once setup is actually done — the reverse of
-/// `bootstrap`'s `show_onboarding`. Renamed from the sibling's `open_app`
-/// (which shows a single hosted instance's webview); here it just reveals
-/// the multi-instance dashboard, which manages its own Decks from there.
-#[tauri::command]
-pub fn open_dashboard(
-    app: AppHandle,
-    window: WebviewWindow,
-    state: tauri::State<'_, BootstrapState>,
-) -> Result<(), BootstrapError> {
-    authorize_onboarding(&window)?;
-    if !state.ready.load(Ordering::Acquire) {
-        return Err(BootstrapError::ActionDenied);
-    }
-    show_dashboard(&app)
-}
-
 /// Runs a recovery action, but only one the *last state pushed to this
 /// window* actually offered (checked via `offered_actions`) — see
 /// [`BootstrapError::ActionDenied`]'s doc comment for why. Deliberately a
@@ -498,7 +490,7 @@ pub fn run_action(
     state: tauri::State<'_, BootstrapState>,
     action: String,
 ) -> Result<(), BootstrapError> {
-    authorize_onboarding(&window)?;
+    authorize_main(&window)?;
     if !state
         .offered_actions
         .read()
@@ -514,51 +506,6 @@ pub fn run_action(
         }
         _ => Err(BootstrapError::ActionDenied),
     }
-}
-
-fn show_onboarding(app: &AppHandle) -> Result<(), BootstrapError> {
-    let onboarding = app
-        .get_webview_window("onboarding")
-        .ok_or(BootstrapError::WindowMissing)?;
-    onboarding
-        .show()
-        .map_err(|_| BootstrapError::WindowMissing)?;
-    onboarding
-        .set_focus()
-        .map_err(|_| BootstrapError::WindowMissing)
-}
-
-fn show_dashboard(app: &AppHandle) -> Result<(), BootstrapError> {
-    if let Some(onboarding) = app.get_webview_window("onboarding") {
-        let _ = onboarding.hide();
-    }
-    let main = app
-        .get_webview_window("main")
-        .ok_or(BootstrapError::WindowMissing)?;
-    main.show().map_err(|_| BootstrapError::WindowMissing)?;
-    main.set_focus().map_err(|_| BootstrapError::WindowMissing)
-}
-
-/// Creates the isolated onboarding window, hidden by default (mirrors the
-/// sibling's `hosted-app` window default) — [`bootstrap`] reveals it only if
-/// setup actually turns out to be needed. Serves from `public/onboarding/`
-/// (Vite copies that directory into `dist/` untouched, alongside the
-/// React-bundled `index.html` at the dist root — no build-pipeline changes
-/// for the dashboard). Call once from `lib.rs`'s `setup()` hook, after the
-/// config-declared `"main"` window already exists.
-pub fn create_onboarding_window(app: &tauri::App) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(
-        app,
-        "onboarding",
-        WebviewUrl::App("onboarding/index.html".into()),
-    )
-    .title("Omnideck Setup")
-    .inner_size(720.0, 560.0)
-    .min_inner_size(640.0, 480.0)
-    .resizable(false)
-    .visible(false)
-    .build()?;
-    Ok(())
 }
 
 #[cfg(test)]
