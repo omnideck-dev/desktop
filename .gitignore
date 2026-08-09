@@ -1,0 +1,32 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Fetched CLI sidecar binaries + SBOMs (see CLI_SIDECAR in
+# src-tauri/src/cli_bridge.rs and bundle.externalBin in tauri.conf.json).
+# Pinned + checksummed via src-tauri/binaries/vendor-manifest.json, which IS
+# committed. Fetch with `npm run fetch:sidecars`; re-verify without
+# re-downloading via `npm run verify:sidecars`.
+/src-tauri/binaries/omnideck-*
+/src-tauri/binaries/sbom/*.json
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
