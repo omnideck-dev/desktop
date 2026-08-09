@@ -15,23 +15,38 @@
 //! **No separate window** (a real change from an earlier version of this
 //! module, not the original design): onboarding was originally an isolated
 //! window, hidden until needed, mirroring the sibling's `hosted-app`/setup
-//! window split. That caused a real, confirmed bug — creating two GTK/
-//! WebKit windows at startup (one hidden) failed EGL/GPU-driver
-//! initialization on at least one real Intel/Mesa combination, with a
-//! blank white dashboard as the symptom, and was independently reproduced
-//! in the sibling repo's own build too (same two-window-at-startup
-//! pattern). Fixed by dropping the second window entirely: `bootstrap`/
-//! `begin_setup`/`run_action` now run from the single `"main"` window, and
+//! window split. That was suspected (wrongly, see below) to have caused a
+//! real, confirmed bug — an `EGL_BAD_PARAMETER` failure at startup on at
+//! least one real Intel/Mesa combination, blank white dashboard as the
+//! symptom. Fixed by dropping the second window: `bootstrap`/`begin_setup`/
+//! `run_action` now run from the single `"main"` window, and
 //! `src/components/OnboardingView.tsx` / `DashboardView.tsx` are just two
 //! screens React swaps between based on the pushed [`SetupState`] — no
-//! window to show or hide, so no `open_dashboard` command either. This is
-//! a real, knowingly-accepted security tradeoff: these commands are no
-//! longer isolated from the dashboard's own broader command surface the
-//! way a separate window's capability grant would enforce. What's kept:
-//! the state machine itself, and the server-side offered-actions allowlist
-//! (`run_action` only accepts what the *last pushed state* actually
-//! offered) — see `reference/desktop-hardening-migration-PLAN.md`'s
-//! "Decisions from review" for the full history of this decision.
+//! window to show or hide, so no `open_dashboard` command either.
+//!
+//! **No `Channel`, no `WebviewWindow` parameter either** (a second, later
+//! correction): the single-window fix above shipped and still reproduced
+//! the identical `EGL_BAD_PARAMETER` crash on the same real hardware. That
+//! ruled out window *count* as the cause — the actual variable was that the
+//! very first "confirmed fix" test never exercised `bootstrap` at all
+//! (disabling the second window's creation also meant its JS, the only
+//! thing that called `bootstrap`, never ran). Two mechanisms in this module
+//! were — before this fix — unique in the whole codebase: `tauri::ipc::
+//! Channel` for pushing [`SetupState`] (every other stream, `add`/`update`/
+//! `remove`'s progress, uses plain `app.emit()` + frontend `listen()`,
+//! proven to work in production), and a `WebviewWindow` injected command
+//! parameter (every other command takes only `AppHandle`). Rather than
+//! guess further, this module was converted to match the rest of the app
+//! exactly: `app.emit("setup-state", ...)` instead of a `Channel`, and
+//! `AppHandle`-only command signatures — dropping the manual
+//! `window.label() == "main"` check along with it, since the capability
+//! grant's own `"windows": ["main"]` scoping (`capabilities/default.json`)
+//! already enforces the same thing at the Tauri-core level, exactly as it
+//! does for every other command here; the manual check was redundant
+//! defense-in-depth, never the only guard. If a future test confirms this
+//! *also* wasn't the cause, the next thing to suspect is the CLI subprocess
+//! spawn itself (`cli_bridge::runtime_status`) happening during initial
+//! webview mount — untested in isolation as of this writing.
 //!
 //! Scope boundary: this module's job ends once the shared runtime is ready.
 //! Creating a Deck (pulling the omnideck image, provisioning a container) is
@@ -57,7 +72,15 @@ use std::{
         Arc, RwLock,
     },
 };
-use tauri::{ipc::Channel, AppHandle, WebviewWindow};
+use tauri::{AppHandle, Emitter};
+
+/// The single event name every pushed [`SetupState`] goes out under —
+/// deliberately one fixed name, not per-call-site names the way `add`/
+/// `update`/`remove`'s progress events are (`"add-progress"` etc.): there's
+/// only ever one onboarding screen listening, and only one bootstrap flow
+/// running at a time (`BootstrapState::setup_running` already enforces
+/// that), so there's nothing for a second name to disambiguate.
+const SETUP_STATE_EVENT: &str = "setup-state";
 
 /// Phases in weighted-progress order, matching `runtime ensure`'s own stage
 /// vocabulary exactly (`engine.SetupStageSoftware`/`SetupStageEnvironment`
@@ -90,11 +113,12 @@ pub struct Diagnostic {
     pub status: String,
 }
 
-/// Pushed from Rust to the dashboard's React app over a Tauri [`Channel`].
-/// `OnboardingView`'s `render(state)`-style logic fully re-derives what it
-/// shows from each pushed state; `App.tsx` decides whether to render
-/// `OnboardingView` or `DashboardView` based on `stage`/`canOpen`. Modeled
-/// on the sibling's `SetupState` in `parity.rs`.
+/// Pushed from Rust to the dashboard's React app as a `"setup-state"` Tauri
+/// event (`app.emit`), the same mechanism `add`/`update`/`remove`'s
+/// progress already use. `OnboardingView`'s `render(state)`-style logic
+/// fully re-derives what it shows from each pushed state; `App.tsx` decides
+/// whether to render `OnboardingView` or `DashboardView` based on
+/// `stage`/`canOpen`. Modeled on the sibling's `SetupState` in `parity.rs`.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SetupState {
@@ -269,16 +293,11 @@ fn error_state(error: &CliError, reached_phase: usize) -> SetupState {
 
 /// Every failure mode of the 3 bootstrap commands themselves — distinct
 /// from [`CliError`] (which is specifically about CLI subprocess failures),
-/// since these also cover the origin and action-allowlist checks that have
-/// nothing to do with the CLI.
+/// since these also cover the action-allowlist check and event emission,
+/// which have nothing to do with the CLI.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum BootstrapError {
-    /// The caller wasn't the `"main"` window. With no separate onboarding
-    /// window left to enforce this via a capability grant, this check is
-    /// the only remaining guard — see this module's doc comment for why
-    /// that's a real, accepted tradeoff, not an oversight.
-    OriginDenied,
     Cli(CliError),
     /// The requested `run_action` wasn't in the *current* state's offered
     /// actions — stops a compromised/buggy webview invoking something the
@@ -292,13 +311,6 @@ impl From<CliError> for BootstrapError {
     fn from(error: CliError) -> Self {
         BootstrapError::Cli(error)
     }
-}
-
-fn authorize_main(window: &WebviewWindow) -> Result<(), BootstrapError> {
-    if window.label() != "main" {
-        return Err(BootstrapError::OriginDenied);
-    }
-    Ok(())
 }
 
 #[derive(Clone)]
@@ -317,8 +329,8 @@ impl Default for BootstrapState {
 }
 
 fn send_state(
+    app: &AppHandle,
     state: &BootstrapState,
-    channel: &Channel<SetupState>,
     setup_state: SetupState,
 ) -> Result<(), BootstrapError> {
     let mut actions = state
@@ -329,8 +341,7 @@ fn send_state(
     actions.extend(setup_state.primary_action.iter().cloned());
     actions.extend(setup_state.secondary_action.iter().cloned());
     drop(actions);
-    channel
-        .send(setup_state)
+    app.emit(SETUP_STATE_EVENT, setup_state)
         .map_err(|_| BootstrapError::StateDeliveryFailed)
 }
 
@@ -386,26 +397,22 @@ fn debug_forced_state() -> Option<SetupState> {
 #[tauri::command]
 pub async fn bootstrap(
     app: AppHandle,
-    window: WebviewWindow,
     state: tauri::State<'_, BootstrapState>,
-    on_event: Channel<SetupState>,
 ) -> Result<(), BootstrapError> {
-    authorize_main(&window)?;
-
     if let Some(forced) = debug_forced_state() {
-        send_state(&state, &on_event, forced)?;
+        send_state(&app, &state, forced)?;
         return Ok(());
     }
 
     match cli_bridge::runtime_status(&app).await {
         Ok(status) if status.ready => {
-            send_state(&state, &on_event, ready_state())?;
+            send_state(&app, &state, ready_state())?;
         }
         Ok(_) => {
-            send_state(&state, &on_event, welcome_state())?;
+            send_state(&app, &state, welcome_state())?;
         }
         Err(error) => {
-            send_state(&state, &on_event, error_state(&error, 0))?;
+            send_state(&app, &state, error_state(&error, 0))?;
         }
     }
     Ok(())
@@ -417,18 +424,15 @@ pub async fn bootstrap(
 #[tauri::command]
 pub async fn begin_setup(
     app: AppHandle,
-    window: WebviewWindow,
     state: tauri::State<'_, BootstrapState>,
-    on_event: Channel<SetupState>,
 ) -> Result<(), BootstrapError> {
-    authorize_main(&window)?;
     if state.setup_running.swap(true, Ordering::AcqRel) {
         return Ok(());
     }
 
-    send_state(&state, &on_event, preparing_state(None, 0.0, None))?;
+    send_state(&app, &state, preparing_state(None, 0.0, None))?;
 
-    let progress_channel = on_event.clone();
+    let progress_app = app.clone();
     let progress_state = state.inner().clone();
     let result = cli_bridge::runtime_ensure(&app, move |event: RuntimeSetupEvent| {
         let index = phase_index(&event.stage);
@@ -438,8 +442,8 @@ pub async fn begin_setup(
         // computer ready…") — falling back to `activity`.
         let activity = event.detail.or(event.activity);
         let _ = send_state(
+            &progress_app,
             &progress_state,
-            &progress_channel,
             preparing_state(index, fraction, activity),
         );
     })
@@ -449,7 +453,7 @@ pub async fn begin_setup(
 
     match result {
         Ok(status) if status.ready => {
-            send_state(&state, &on_event, ready_state())?;
+            send_state(&app, &state, ready_state())?;
         }
         Ok(status) => {
             let error = CliError::Cli(Box::new(cli_bridge::CliErrorBody {
@@ -463,18 +467,18 @@ pub async fn begin_setup(
                 action_value: None,
                 instances: None,
             }));
-            send_state(&state, &on_event, error_state(&error, PHASES.len()))?;
+            send_state(&app, &state, error_state(&error, PHASES.len()))?;
         }
         Err(error) => {
             let reached = phase_index("environment").unwrap_or(PHASES.len() - 1);
-            send_state(&state, &on_event, error_state(&error, reached))?;
+            send_state(&app, &state, error_state(&error, reached))?;
         }
     }
     Ok(())
 }
 
-/// Runs a recovery action, but only one the *last state pushed to this
-/// window* actually offered (checked via `offered_actions`) — see
+/// Runs a recovery action, but only one the *last state pushed* actually
+/// offered (checked via `offered_actions`) — see
 /// [`BootstrapError::ActionDenied`]'s doc comment for why. Deliberately a
 /// small action set for now: `"retry"` re-runs `begin_setup` (the frontend
 /// just calls that command directly — no server-side action needed for it,
@@ -486,11 +490,9 @@ pub async fn begin_setup(
 #[tauri::command]
 pub fn run_action(
     app: AppHandle,
-    window: WebviewWindow,
     state: tauri::State<'_, BootstrapState>,
     action: String,
 ) -> Result<(), BootstrapError> {
-    authorize_main(&window)?;
     if !state
         .offered_actions
         .read()
