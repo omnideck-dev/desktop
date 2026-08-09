@@ -86,13 +86,20 @@ jobs:
       # and Windows shows a SmartScreen "unknown publisher" prompt. Worth
       # doing before a real public release — see the note in RELEASING.md.
       #
-      # If the Linux leg ever fails here with "failed to run linuxdeploy" /
-      # a strip-related error: that's the same binutils/linuxdeploy
-      # incompatibility documented in this repo's AGENT.md (confirmed on a
-      # local Fedora-toolbox dev environment, not yet confirmed either way
-      # on ubuntu-24.04's own binutils) — the fix is `NO_STRIP=1` as an env
-      # var on this step. Not added preemptively since it produces a larger,
-      # unstripped binary and there's no evidence yet this runner needs it.
+      # `npm run build:linux` sets NO_STRIP=1 itself now (in package.json) —
+      # confirmed the hard way that this runner's own strip needed it too,
+      # just not the way expected: this repo's AGENT.md already documented
+      # a local Fedora-toolbox binutils version that *fails the build
+      # outright* without NO_STRIP=1 (can't parse bundled libraries'
+      # `.relr.dyn` section). ubuntu-24.04's binutils builds fine either
+      # way — no error — but a real user's machine (Intel Iris Xe, Mesa
+      # 26.1.4) reproducibly failed to launch a stripped release AppImage
+      # with `Could not create default EGL display: EGL_BAD_PARAMETER`,
+      # while the exact same source built locally (where NO_STRIP=1 was
+      # already the default via scripts/build-appimage.sh) launched fine on
+      # that same machine. Two real, differently-shaped bugs from the same
+      # root cause (stripping a bundled AppImage's libraries) — one loud
+      # (build fails), one silent (build succeeds, runtime GPU init breaks).
       - name: Build the native installer
         run: npm run ${{ matrix.command }}
 
