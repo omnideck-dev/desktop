@@ -6,8 +6,15 @@ never move or reuse one.
 
 ## Cut a release
 
-1. Bump `"version"` in `package.json` to the new version (no `v` prefix
-   there — the tag gets the `v`).
+1. Bump the version to match in all three places — they must be identical
+   (no `v` prefix in any of them — the tag gets the `v`):
+   - `"version"` in `package.json`
+   - `"version"` in `src-tauri/tauri.conf.json` (what Tauri actually stamps
+     into the built installer/About dialog)
+   - `version` in `src-tauri/Cargo.toml`'s `[package]`
+
+   `test.yml`'s tag-push check fails loudly if any of the three don't match
+   the tag exactly — this is a real mistake it's already caught once.
 2. If the pinned CLI needs bumping too, update
    `src-tauri/binaries/vendor-manifest.json` deliberately (see
    `AGENT.md`'s "CLI sidecar" note) — never weaken its checksum checks.
