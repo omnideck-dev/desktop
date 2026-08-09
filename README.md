@@ -70,6 +70,7 @@ The dashboard opens immediately. If you don't have a ready Podman runtime yet, a
 ## Documentation
 
 - [`DEVELOPMENT.md`](./DEVELOPMENT.md) — full dev environment setup, testing (including previewing onboarding screens without touching real Podman state), and the command reference
+- [`TESTING.md`](./TESTING.md) — the full test-layer breakdown (source, release contract, native smoke, manual) and what's deliberately not built yet
 - [`RELEASING.md`](./RELEASING.md) — tagging, the CI release pipeline, and the review-gate policy
 - [`AGENT.md`](./AGENT.md) — architecture, non-negotiable rules, and current build status (the primary reference for contributing code)
 - [`DESIGN.md`](./DESIGN.md) — screen-by-screen UI/UX reference

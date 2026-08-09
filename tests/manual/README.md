@@ -16,16 +16,16 @@ Required procedures:
 
 - [Clean-machine first run](clean-first-run.md)
 - [Recovery lifecycle](recovery-lifecycle.md)
+- [Published artifact and trust experience](published-artifact.md)
 
-Not yet ported from the sibling: `published-artifact.md` (needs a real
-release/CI pipeline — Phase 6/7 of
-`reference/desktop-hardening-migration-PLAN.md`, not done yet),
-`hosted-app-behavior.md` (specific to the sibling's single hosted-instance
-webview, which this repo's dashboard model doesn't have — the closest
-analog here is the per-Deck instance webview, DESIGN.md #7, already covered
-by this repo's existing manual verification practice, not a new document),
-and `visual-platform.md` (worth adding once this app ships on more than one
-platform — right now only Linux has been built/run at all).
+Not yet ported from the sibling: `hosted-app-behavior.md` (specific to the
+sibling's single hosted-instance webview, which this repo's dashboard model
+doesn't have — the closest analog here is the per-Deck instance webview,
+DESIGN.md #7, already covered by this repo's existing manual verification
+practice, not a new document), and `visual-platform.md` (worth adding once
+this app has real usage on more than one platform — right now only Linux
+has been built/run and verified at all, including the one real published
+release so far).
 
 Every execution must record:
 
