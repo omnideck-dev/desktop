@@ -9,13 +9,18 @@
 // Onboarding used to run from a second, isolated "onboarding" window with
 // its own capability grant — reverted to a single "main" window (React
 // screen-swap instead of a window swap) after a real EGL/GPU-driver bug was
-// root-caused to the two-window-at-startup pattern itself (see
-// bootstrap.rs's doc comment and reference/desktop-hardening-migration-PLAN.md's
-// "Decisions from review" for the full history). The onboarding-specific
-// isolation tests that used to live here no longer apply — there's no
-// second window or capability left to isolate — but the dashboard-bridge
-// allowlist assertions below now also cover the 3 bootstrap commands folded
-// into it.
+// suspected to be the two-window-at-startup pattern itself. That reversal
+// alone didn't actually fix it (the bug reappeared in the next real-hardware
+// test) — the working theory now is `bootstrap.rs`'s use of `tauri::ipc::
+// Channel` and a `WebviewWindow` command parameter, both unique to this
+// module and both since replaced with the same `app.emit()`/`listen()` +
+// `AppHandle`-only pattern every other command in this app already uses
+// successfully. See bootstrap.rs's doc comment and
+// reference/desktop-hardening-migration-PLAN.md's "Decisions from review"
+// for the full history. The onboarding-specific isolation tests that used
+// to live here no longer apply — there's no second window or capability
+// left to isolate — but the dashboard-bridge allowlist assertions below now
+// also cover the 3 bootstrap commands folded into it.
 //
 // These assertions exist so a future PR can't silently widen the attack
 // surface (a broader capability grant, a new command added to an allowlist
@@ -108,35 +113,51 @@ test("dashboard permission's command list matches lib.rs's invoke_handler exactl
 });
 
 test("the frontend only calls bootstrap's three commands, never a shell/process API", () => {
-  const invoked = [...useBootstrapTs.matchAll(/invoke(?:WithChannel)?\(\s*"([^"]+)"/g)].map((m) => m[1]);
+  const invoked = [...useBootstrapTs.matchAll(/invoke\(\s*"([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual([...new Set(invoked)].sort(), ["begin_setup", "bootstrap", "run_action"]);
   assert.doesNotMatch(useBootstrapTs, /plugin-shell|Command\.sidecar|executable|argv|workingDirectory/);
 });
 
-test("every bootstrap command authorizes window.label() == \"main\"", () => {
-  assert.match(bootstrapRust, /fn authorize_main\(window: &WebviewWindow\)/);
-  assert.match(bootstrapRust, /window\.label\(\) != "main"/);
+test("bootstrap.rs's commands are AppHandle-only, matching every other command in this app", () => {
   for (const command of ["bootstrap", "begin_setup", "run_action"]) {
     const fn = bootstrapRust.match(new RegExp(`pub (?:async )?fn ${command}\\([\\s\\S]*?\\n\\}`));
     assert.ok(fn, `expected to find ${command}()`);
-    assert.match(fn[0], /authorize_main\(&window\)\?/, `${command} must call authorize_main`);
+    assert.doesNotMatch(fn[0], /WebviewWindow/, `${command} should not take a WebviewWindow parameter`);
   }
 });
 
-test("bootstrap.rs no longer manages window visibility", () => {
-  // The regression this guards against is the one this repo actually hit: a
-  // second, initially-hidden window created at startup broke EGL/GPU-driver
-  // init on at least one real Intel/Mesa combination. Asserting the
-  // window-management surface is gone (not just unused) keeps it from
-  // creeping back in as part of some future onboarding tweak.
+test("bootstrap.rs pushes state via app.emit, not a Channel", () => {
+  assert.match(bootstrapRust, /const SETUP_STATE_EVENT: &str = "setup-state"/);
+  assert.match(bootstrapRust, /app\.emit\(SETUP_STATE_EVENT/);
+});
+
+test("bootstrap.rs no longer manages window visibility or uses Channel/WebviewWindow", () => {
+  // Two regressions this guards against, in order: (1) a second,
+  // initially-hidden window created at startup, suspected of breaking
+  // EGL/GPU-driver init on at least one real Intel/Mesa combination — fixed
+  // by removing the second window; (2) that fix alone didn't hold on a
+  // second real-hardware test, and `tauri::ipc::Channel` /
+  // `WebviewWindow` turned out to be the only mechanisms unique to this
+  // module versus the rest of the app's proven-working IPC patterns.
+  // Asserting both are gone (not just unused) keeps either from creeping
+  // back in as part of some future onboarding tweak. Doc comments (`//!`/
+  // `///`) are excluded — they're allowed, and expected, to keep discussing
+  // this history in prose; only actual code is checked.
+  const code = bootstrapRust
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/!|\/\/\/)/.test(line))
+    .join("\n");
   for (const symbol of [
     "show_onboarding",
     "show_dashboard",
     "create_onboarding_window",
     "WebviewWindowBuilder",
     "WebviewUrl",
+    "WebviewWindow",
+    "ipc::Channel",
+    "Channel<",
   ]) {
-    assert.doesNotMatch(bootstrapRust, new RegExp(symbol), `${symbol} should not reappear in bootstrap.rs`);
+    assert.doesNotMatch(code, new RegExp(symbol), `${symbol} should not reappear in bootstrap.rs's code`);
   }
 });
 
