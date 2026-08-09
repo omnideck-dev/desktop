@@ -14,7 +14,7 @@
     "fetch:sidecars": "node scripts/fetch-sidecars.mjs",
     "verify:sidecars": "node scripts/verify-sidecars.mjs",
     "checksums": "node scripts/checksums.mjs",
-    "test:policy": "node --test tests/*.test.mjs",
+    "test:policy": "node --test tests/*.test.mjs tests/releasecontract/*.test.mjs tests/hardware/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --locked",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D warnings",

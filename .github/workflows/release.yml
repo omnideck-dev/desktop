@@ -140,6 +140,30 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      # Static contract on the build artifacts, before anything is attested
+      # or published: exact 5-artifact matrix, per-format magic bytes, and
+      # every checksum matches its file. Catches a corrupted/truncated/
+      # wrong-architecture artifact — fail_on_unmatched_files below only
+      # catches a totally missing one. See tests/releasecontract/README.md.
+      - name: Verify the release artifact contract
+        run: |
+          node tests/releasecontract/verify-release.mjs \
+            --directory dist \
+            --version "${GITHUB_REF_NAME}" \
+            --report artifacts/desktop-release-contract/report.json
+
+      - name: Upload the release contract report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-contract-report
+          path: artifacts/desktop-release-contract/
+          if-no-files-found: warn
+
       - name: Attest release artifacts
         uses: actions/attest-build-provenance@v3
         with:

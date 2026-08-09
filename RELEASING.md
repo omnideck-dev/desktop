@@ -75,15 +75,11 @@ to inspect or change the required reviewers.
   developer" warning; Windows shows a SmartScreen "unknown publisher" prompt.
   Fine for early alpha/internal use; worth fixing (via GitHub Environment
   secrets + the relevant Tauri signing config) before pointing this at the
-  general public.
-- **No release-artifact contract check.** Nothing yet asserts the expected
-  installer files actually exist with the expected names/checksums before
-  publishing — `release.yml`'s `fail_on_unmatched_files: true` catches a
-  totally missing platform, but not a subtly wrong one. See
-  `reference/desktop-hardening-migration-PLAN.md`'s Phase 7 for the sibling
-  repo's `tests/releasecontract` pattern if this becomes worth porting.
-- **No `TESTING.md`.** This file assumes `ci.yml`'s green checkmark is
-  sufficient evidence; there's no separate document defining test layers,
-  promotion gates, or required manual sign-off yet. Fine at this repo's
-  current stage (single maintainer, no external users depending on
-  releases); revisit if that changes.
+  general public. `tests/manual/published-artifact.md` covers verifying
+  this is the *only* warning shown.
+
+See [`TESTING.md`](TESTING.md) for the full test-layer breakdown and its
+own "Deliberately not done yet" list (self-hosted hardware runners,
+`run.ps1`, destructive host-reset tooling, post-publication
+re-verification) — a release-artifact contract check and this doc both
+used to be listed here as gaps; both are done now.
