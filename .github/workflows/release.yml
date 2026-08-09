@@ -1,0 +1,156 @@
+name: release
+
+# Only a tag push or a manual dispatch (the latter for a pre-tag confidence
+# check across all three platforms — see RELEASING.md). Re-runs test.yml
+# against the exact tagged commit before building anything, rather than
+# trusting that ci.yml already passed on main at merge time.
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build:
+    needs: test
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            command: build:linux
+          - name: windows-x64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            command: build:windows
+          - name: macos-arm64
+            runner: macos-15
+            target: aarch64-apple-darwin
+            command: build:macos
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils \
+            fakeroot \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            patchelf \
+            rpm
+
+      - run: npm ci
+
+      - name: Cache pinned CLI sidecars
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/binaries
+          key: sidecars-${{ matrix.target }}-${{ hashFiles('src-tauri/binaries/vendor-manifest.json') }}
+
+      # Unsigned builds: no Apple notarization or Windows Authenticode cert
+      # wired in yet. Installers work, but macOS shows a Gatekeeper warning
+      # and Windows shows a SmartScreen "unknown publisher" prompt. Worth
+      # doing before a real public release — see the note in RELEASING.md.
+      #
+      # If the Linux leg ever fails here with "failed to run linuxdeploy" /
+      # a strip-related error: that's the same binutils/linuxdeploy
+      # incompatibility documented in this repo's AGENT.md (confirmed on a
+      # local Fedora-toolbox dev environment, not yet confirmed either way
+      # on ubuntu-24.04's own binutils) — the fix is `NO_STRIP=1` as an env
+      # var on this step. Not added preemptively since it produces a larger,
+      # unstripped binary and there's no evidence yet this runner needs it.
+      - name: Build the native installer
+        run: npm run ${{ matrix.command }}
+
+      - name: Generate SHA-256 checksums
+        run: node scripts/checksums.mjs src-tauri/target/${{ matrix.target }}/release/bundle
+
+      - name: Upload the installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: omnideck-${{ matrix.name }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.rpm
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sha256
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    # Two environments, not one: "release" (stable tags, no "-" suffix)
+    # requires a review before it runs — "release-preview" (alpha/beta/rc,
+    # anything with a "-" suffix, same test contains() expects as the
+    # `prerelease:`/`make_latest:` inputs below) has no protection rules, so
+    # prerelease tags publish unattended. Configured directly via the GitHub
+    # API (repos/omnideck-dev/desktop/environments/{release,release-preview}),
+    # not in this file — see RELEASING.md.
+    environment: ${{ contains(github.ref_name, '-') && 'release-preview' || 'release' }}
+    timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: omnideck-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/**/*
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Omnideck ${{ github.ref_name }}
+          generate_release_notes: true
+          files: dist/**/*
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ !contains(github.ref_name, '-') }}
