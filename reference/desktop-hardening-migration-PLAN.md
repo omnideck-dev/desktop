@@ -334,14 +334,14 @@ This repo has no `.github/workflows/*.yml` yet. The sibling repo's matrix builds
 | Windows | `x86_64-pc-windows-msvc` | `nsis` | Most common Windows arch. |
 | macOS | `aarch64-apple-darwin` | `dmg` | Apple Silicon is the current default; add `x86_64-apple-darwin` back if Intel-Mac users show up. |
 
-- [ ] When wiring CI, use exactly this 3-entry matrix (not the sibling repo's 6-entry one) —
+- [x] When wiring CI, use exactly this 3-entry matrix (not the sibling repo's 6-entry one) —
   `linux-arm64`, `windows-arm64`, and `macos-x64` are deliberately dropped, not forgotten. Add them back
   as separate matrix entries later if real demand shows up; don't restore all six preemptively.
-- [ ] Model the workflow shape (not the target list) on the sibling repo's
+- [x] Model the workflow shape (not the target list) on the sibling repo's
   `.github/workflows/desktop.yml`: a fast `test` job (frontend build/typecheck, `cargo test`,
   `cargo clippy -- -D warnings`, `cargo fmt --check`) gating a `build` job matrix, with per-target
   installer artifacts uploaded and checksummed.
-- [ ] Package.json build scripts should be named/scoped to match — one `build:linux`
+- [x] Package.json build scripts should be named/scoped to match — one `build:linux`
   (`--bundles appimage,deb,rpm --target x86_64-unknown-linux-gnu`), one `build:windows`
   (`--bundles nsis --target x86_64-pc-windows-msvc`), one `build:macos`
   (`--bundles dmg --target aarch64-apple-darwin`). Don't add the arm64/x64-alternate script variants
@@ -352,10 +352,10 @@ This repo has no `.github/workflows/*.yml` yet. The sibling repo's matrix builds
 Lower priority — do this when actually cutting a first real release, not preemptively:
 
 - [ ] `TESTING.md` defining test layers/gates (model: sibling repo's `TESTING.md`).
-- [ ] `RELEASING.md` defining tag/publish flow (model: sibling repo's `RELEASING.md`).
+- [x] `RELEASING.md` defining tag/publish flow (model: sibling repo's `RELEASING.md`).
 - [ ] A release-artifact contract check (model: sibling repo's `tests/releasecontract/verify-release.mjs`)
   asserting the expected installer files/checksums exist for a given version tag before publishing.
-- [ ] SHA-256 checksums generated and attached alongside installers (model: sibling repo's
+- [x] SHA-256 checksums generated and attached alongside installers (model: sibling repo's
   `scripts/checksums.mjs` + the `attest-build-provenance` step in its release workflow).
 
 ---
