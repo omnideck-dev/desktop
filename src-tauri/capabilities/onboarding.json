@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "onboarding",
+  "description": "Capability for the isolated onboarding window. In this repo \"main\" is the dashboard, not the setup window (unlike the sibling app this pattern is modeled on) — this capability is deliberately scoped to \"onboarding\" only, never \"main\". No core:* or opener:* permissions: onboarding never loads remote content or opens external links.",
+  "windows": [
+    "onboarding"
+  ],
+  "local": true,
+  "permissions": [
+    "onboarding-bridge"
+  ]
+}

@@ -122,6 +122,41 @@ above are superseded:
   commands, `authorize_main` checks `"main"`, and a new assertion that `bootstrap.rs` contains no window-
   management symbols at all — asserted by absence, so this exact pattern can't quietly creep back in).
 
+## Re-reversal (2026-08-10): back to two windows — the EGL bug was never about window count
+
+The reversal above was never fully confirmed correct; it was confirmed *plausible* (removing the second
+window happened to make one specific test pass) and then acted on. Two more rounds of debugging on real
+affected hardware (a released `v0.5.0-alpha.3` with the single-window fix, then `v0.5.0-alpha.4` with
+`tauri::ipc::Channel`/`WebviewWindow` also removed) both still reproduced the identical
+`EGL_BAD_PARAMETER` crash. The actual cause, finally confirmed by downloading the real published CI
+artifact and diffing its bundled `webkit2gtk-4.1`/`gtk3`/`libepoxy` libraries against a local Fedora-toolbox
+build: CI's Linux release build ran directly on `ubuntu-24.04`, and `linuxdeploy` bundles whatever GTK/
+WebKit libraries exist on the build machine — Ubuntu's crashed on the affected hardware, Fedora's (this
+repo's own toolbox) didn't. Fixed in `release.yml` by building the Linux leg inside a `container: fedora:42`
+instead of bare `ubuntu-24.04`. Full account, including the two dead-end theories in between, in `AGENT.md`'s
+"The `EGL_BAD_PARAMETER` AppImage crash: what actually fixed it" section.
+
+With the real cause understood and fixed at the CI-container level — nothing to do with window count or IPC
+mechanism — the user asked to go back to the original two-window design, both because it's now known to be
+safe and because it's closer to the sibling's own (since-matured) setup flow. This section supersedes the
+"Reversal" section above, which is left in place as the historical record of a reasonable-but-wrong
+hypothesis, not deleted. Concretely, reverted from `a2f1ca7` (the last commit before the single-window
+pivot): `bootstrap.rs`, `lib.rs`, `capabilities/onboarding.json`, `permissions/onboarding-bridge.toml`,
+`permissions/dashboard-bridge.toml`, `public/onboarding/*`, `App.tsx`, and `tauri.conf.json`'s
+`withGlobalTauri`; deleted the now-unneeded `OnboardingView.tsx`/`useBootstrap.ts`/`types/setup.ts`. Also
+folded in, on top of the restored two-window baseline (not reverted, these are new since the CLI moved to
+`v0.11.0-alpha.2`): the sibling's `authorize_local_setup`-style URL origin check (`is_local_setup_url`,
+alongside the existing `window.label()` check), the CLI's new `substage`/`status`/`"permission"`-state
+`runtime ensure` fields (`SetupState.awaitingPermission`, a truthful "Waiting for approval" UI treatment
+per `tests/setup-ux-principles.md`), and 4 new CLI error codes. Also ported: `tests/setup-ux-principles.md`
+(the sibling's setup UX contract) and `tests/host-adapter.test.mjs` (the sibling's `vm`-module IPC-sequence
+testing technique, adapted — which caught a real gap while porting it: a rejected automatic `bootstrap()`
+call had no error reporting at all; fixed in `host-adapter.js`, see its `reportBootstrapFailure`).
+Deliberately **not** ported: the sibling's `parity.rs`-style instance-reconciliation logic (single-instance-
+specific, no analog in this repo's multi-instance model) and its VM-based e2e/golden-checkpoint test
+infrastructure (explicitly out of scope for this repo's current scale — see `TESTING.md`'s existing
+reasoning for not adopting a full promotion ladder either).
+
 ---
 
 ## Phase 1 — Sidecar integrity (do this before shipping any real build)
@@ -243,12 +278,13 @@ that's their problem to port back, not this repo's problem to solve. For *this* 
 
 ## Phase 5 — Bootstrap/onboarding state machine and its isolated webview
 
-**Superseded by "Reversal (2026-08-09)" above**: this phase's window-creation steps (`create_onboarding_window`,
-the `"onboarding"` capability/permission files, the vanilla-JS `public/onboarding/` bundle) were built,
-shipped, then removed after a real hardware bug. Left unedited below as the historical record of the
-original design and why it was chosen — the checkboxes are still `[x]` because the work described *was*
-done, just later reverted. Do not use this phase as a guide for the current architecture; use the Reversal
-section and `bootstrap.rs`'s own doc comment instead.
+**Current again, after a detour** — see "Re-reversal (2026-08-10)" above for the full story: this phase's
+window-creation steps (`create_onboarding_window`, the `"onboarding"` capability/permission files, the
+vanilla-JS `public/onboarding/` bundle) were built, shipped, removed after a real hardware bug was
+*suspected* to be caused by them, then restored once the real cause (a CI build-container mismatch,
+nothing to do with this phase) was confirmed. The checkboxes below are `[x]` and accurate again — this
+phase's design is what's actually running. `bootstrap.rs`'s own doc comment has the current, authoritative
+account; the "Reversal"/"Re-reversal" sections above are the history of how it got there and back.
 
 `AGENT.md` already names `bootstrap.rs` (podman/docker detection+install, WSL2 setup, `podman machine`
 lifecycle) as the one legitimate non-CLI-delegated logic in this repo's target architecture, and it's

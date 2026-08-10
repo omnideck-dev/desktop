@@ -18,25 +18,26 @@ A Tauri v2 + React/TypeScript desktop app that manages one or more local Omnidec
 ## Architecture
 
 ```
-                    single "main" window
-┌───────────────────────────────────────────────────────────┐
-│                     React + TypeScript                     │
-│  OnboardingView          Dashboard view                    │
-│  first-run/repair   ⇄    Deck list, start/                 │
-│  Podman runtime setup    stop/update/remove                │
-│  (shown until ready)     (shown once ready)                │
-└──────────────────────────────┬──────────────────────────────┘
-                                ▼
-                 src-tauri/src/cli_bridge.rs
-           (owns all `omnideck` CLI subprocess I/O —
-            spawn, JSON/NDJSON parsing, bounds, timeouts)
-                                │
-                                ▼
-                 bundled `omnideck` CLI sidecar
-              (pinned by version + checksum, never PATH)
+┌──────────────────────┐        ┌──────────────────────────┐
+│   "main" (dashboard)  │        │   "onboarding" (hidden    │
+│                       │        │    until actually needed) │
+│   React + TypeScript  │        │   vanilla JS/HTML/CSS     │
+│   Deck list, start/   │        │   first-run/repair Podman │
+│   stop/update/remove  │        │   runtime setup           │
+└───────────┬───────────┘        └────────────┬──────────────┘
+            │                                 │
+            └───────────────┬─────────────────┘
+                             ▼
+              src-tauri/src/cli_bridge.rs
+        (owns all `omnideck` CLI subprocess I/O —
+         spawn, JSON/NDJSON parsing, bounds, timeouts)
+                             │
+                             ▼
+              bundled `omnideck` CLI sidecar
+           (pinned by version + checksum, never PATH)
 ```
 
-One window, one React app — onboarding and the dashboard are two screens `App.tsx` swaps between client-side based on whether the shared Podman runtime is ready, not two OS-level windows. That wasn't the original design (onboarding first shipped as a second, hidden, minimally-privileged window with its own Tauri capability); it was reverted after real hardware testing found that creating two GTK/WebKit windows at startup broke EGL/GPU-driver init on at least one real Intel/Mesa combination. See [`src-tauri/src/bootstrap.rs`](./src-tauri/src/bootstrap.rs)'s module doc comment for the full rationale — including the security-isolation tradeoff that reversal knowingly accepts — and [`reference/desktop-hardening-migration-PLAN.md`](./reference/desktop-hardening-migration-PLAN.md) for how this repo's security posture got here.
+Two windows, two frontend stacks, deliberately — the dashboard is React with a broad command surface; onboarding is an isolated, minimally-privileged vanilla-JS window with its own Tauri capability, unreachable from the dashboard. (This repo briefly went single-window mid-development, suspecting the two-window pattern caused a real `EGL_BAD_PARAMETER` crash on some Linux hardware — it didn't; the actual cause was a CI build-environment mismatch, see `AGENT.md`'s postmortem section. Once confirmed, the two-window design came back.) See [`src-tauri/src/bootstrap.rs`](./src-tauri/src/bootstrap.rs)'s module doc comment for the full rationale, and [`reference/desktop-hardening-migration-PLAN.md`](./reference/desktop-hardening-migration-PLAN.md) for how this repo's security posture got here.
 
 ## Commands
 
@@ -64,7 +65,7 @@ npm run fetch:sidecars
 npm run dev:app
 ```
 
-The app window opens immediately. If you don't have a ready Podman runtime yet, an onboarding screen guides you through setting one up before handing off to the dashboard.
+The dashboard window opens immediately. If you don't have a ready Podman runtime yet, an onboarding window guides you through setting one up.
 
 ## Documentation
 

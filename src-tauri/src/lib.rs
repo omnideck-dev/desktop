@@ -63,11 +63,18 @@ async fn run_packaged_smoke(app: tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         // Must be the first plugin registered (Tauri's own requirement, load-order
-        // sensitive on Windows). A second launch just focuses the single "main"
-        // window instead of opening a second process. No-op on macOS, which
-        // already prevents a second instance at the OS level.
+        // sensitive on Windows). A second launch focuses whichever of "onboarding"/
+        // "main" is currently visible instead of opening a second process — mirrors
+        // the sibling repo's "hosted-app if visible, else main" selection, with these
+        // labels swapped in (see bootstrap.rs's doc comment for why the labels don't
+        // map 1:1 to the sibling's). No-op on macOS, which already prevents a second
+        // instance at the OS level.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
+            let active = app
+                .get_webview_window("onboarding")
+                .filter(|window| window.is_visible().unwrap_or(false))
+                .or_else(|| app.get_webview_window("main"));
+            if let Some(window) = active {
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
@@ -92,9 +99,11 @@ pub fn run() {
             commands::remove_instance,
             bootstrap::bootstrap,
             bootstrap::begin_setup,
+            bootstrap::open_dashboard,
             bootstrap::run_action,
         ])
         .setup(|app| {
+            bootstrap::create_onboarding_window(app)?;
             if std::env::var_os("OMNIDECK_DESKTOP_SMOKE_FILE").is_some() {
                 let handle = app.handle().clone();
                 tauri::async_runtime::spawn(run_packaged_smoke(handle));

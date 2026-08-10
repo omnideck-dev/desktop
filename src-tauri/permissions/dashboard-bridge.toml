@@ -21,7 +21,4 @@ commands.allow = [
   "suggest_new_deck_defaults",
   "add_instance",
   "remove_instance",
-  "bootstrap",
-  "begin_setup",
-  "run_action",
 ]

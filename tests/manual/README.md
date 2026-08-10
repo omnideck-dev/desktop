@@ -17,6 +17,8 @@ Required procedures:
 - [Clean-machine first run](clean-first-run.md)
 - [Recovery lifecycle](recovery-lifecycle.md)
 - [Published artifact and trust experience](published-artifact.md)
+- [Setup UX principles](../setup-ux-principles.md) — the product/test contract
+  the two setup procedures above must preserve, not a procedure of its own.
 
 Not yet ported from the sibling: `hosted-app-behavior.md` (specific to the
 sibling's single hosted-instance webview, which this repo's dashboard model
