@@ -29,20 +29,61 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux runs inside a Fedora 42 container on the ubuntu-24.04
+          # runner — not ubuntu-24.04 directly — because linuxdeploy bundles
+          # whatever GTK/WebKit/libepoxy shared libraries exist on the build
+          # machine into the AppImage. Confirmed the hard way: an
+          # ubuntu-24.04-built AppImage reproducibly failed to launch on a
+          # real Intel Iris Xe / Mesa 26.1.4 machine with `Could not create
+          # default EGL display: EGL_BAD_PARAMETER`, while the exact same
+          # source built in the Fedora 42 toolbox this repo's own dev
+          # workflow already uses (scripts/dev.sh, AGENT.md) launched fine
+          # on that same machine — verified directly by diffing the bundled
+          # webkit2gtk-4.1/gtk3/libepoxy binaries between the two builds
+          # (genuinely different sizes, i.e. different upstream versions,
+          # not just a stripping difference — NO_STRIP=1 alone did not fix
+          # this on its own; see the git history for that dead end). Fedora
+          # 42 specifically because that's this repo's own toolbox's
+          # version — matching the environment that's actually confirmed
+          # working, not picked arbitrarily.
           - name: linux-x64
             runner: ubuntu-24.04
+            container: fedora:42
             target: x86_64-unknown-linux-gnu
             command: build:linux
           - name: windows-x64
             runner: windows-2025
+            container: ""
             target: x86_64-pc-windows-msvc
             command: build:windows
           - name: macos-arm64
             runner: macos-15
+            container: ""
             target: aarch64-apple-darwin
             command: build:macos
     runs-on: ${{ matrix.runner }}
+    # Empty string (the windows/macos matrix entries) means "no container" —
+    # GitHub Actions runs the job directly on `runs-on` in that case.
+    container: ${{ matrix.container }}
     steps:
+      # Package names/versions confirmed directly against this exact image
+      # (podman run fedora:42) before wiring into CI — not guessed from the
+      # toolbox's dnf list, which also installs rust/cargo/nodejs/npm/go
+      # that this job gets from dtolnay/rust-toolchain and actions/setup-node
+      # instead. Must run before actions/checkout below: bare fedora:42 has
+      # no `git`, which checkout needs. `xdg-utils` is for the AppImage
+      # bundler (`failed to bundle project: xdg-open binary not found`
+      # without it) — neither is in AGENT.md's toolbox list since the host
+      # there already has them.
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            gcc gcc-c++ make pkgconf-pkg-config \
+            webkit2gtk4.1-devel gtk3-devel librsvg2-devel openssl-devel \
+            libappindicator-gtk3-devel patchelf file curl wget git \
+            rpm-build xdg-utils
+
       - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v6
@@ -59,20 +100,6 @@ jobs:
           workspaces: src-tauri
           key: ${{ matrix.target }}
 
-      - name: Install Linux packaging dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            binutils \
-            fakeroot \
-            libappindicator3-dev \
-            librsvg2-dev \
-            libssl-dev \
-            libwebkit2gtk-4.1-dev \
-            patchelf \
-            rpm
-
       - run: npm ci
 
       - name: Cache pinned CLI sidecars
@@ -86,20 +113,16 @@ jobs:
       # and Windows shows a SmartScreen "unknown publisher" prompt. Worth
       # doing before a real public release — see the note in RELEASING.md.
       #
-      # `npm run build:linux` sets NO_STRIP=1 itself now (in package.json) —
-      # confirmed the hard way that this runner's own strip needed it too,
-      # just not the way expected: this repo's AGENT.md already documented
-      # a local Fedora-toolbox binutils version that *fails the build
-      # outright* without NO_STRIP=1 (can't parse bundled libraries'
-      # `.relr.dyn` section). ubuntu-24.04's binutils builds fine either
-      # way — no error — but a real user's machine (Intel Iris Xe, Mesa
-      # 26.1.4) reproducibly failed to launch a stripped release AppImage
-      # with `Could not create default EGL display: EGL_BAD_PARAMETER`,
-      # while the exact same source built locally (where NO_STRIP=1 was
-      # already the default via scripts/build-appimage.sh) launched fine on
-      # that same machine. Two real, differently-shaped bugs from the same
-      # root cause (stripping a bundled AppImage's libraries) — one loud
-      # (build fails), one silent (build succeeds, runtime GPU init breaks).
+      # `npm run build:linux` sets NO_STRIP=1 itself (in package.json) — this
+      # repo's AGENT.md already documented that the Fedora toolbox's binutils
+      # *fails the build outright* without it (can't parse a bundled
+      # library's `.relr.dyn` section), and the Fedora 42 container this job
+      # now uses hits the same issue. This was tried as a fix for the real
+      # `EGL_BAD_PARAMETER` runtime crash first (on the theory that
+      # ubuntu-24.04's own strip silently corrupted something instead of
+      # erroring) — it wasn't; still needed for the build to succeed here,
+      # but the actual runtime fix was the `container:` switch on this
+      # matrix entry above, not this.
       - name: Build the native installer
         run: npm run ${{ matrix.command }}
 

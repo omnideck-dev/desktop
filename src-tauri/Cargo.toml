@@ -1,6 +1,6 @@
 [package]
 name = "omnideck-desktop"
-version = "0.5.0-alpha.5"
+version = "0.5.0-alpha.6"
 description = "Omnideck desktop app — a thin GUI shell over the omnideck CLI"
 authors = ["Omnideck"]
 edition = "2021"
