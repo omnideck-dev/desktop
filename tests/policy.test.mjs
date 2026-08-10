@@ -228,3 +228,18 @@ test("sidecar process output is bounded and every operation has a timeout", () =
   assert.match(cliBridgeRust, /fn append_bounded/);
   assert.match(cliBridgeRust, /struct LineBuffer/);
 });
+
+test("both Linux AppImage build paths strip the known half-bundled libraries", async () => {
+  // Regression guard for a real cross-distro crash: linuxdeploy bundles
+  // libgcrypt.so.20 but not its version-locked pair libgpg-error.so.0 (the
+  // latter is on linuxdeploy's own exclude list, the former isn't), so a
+  // Fedora-built AppImage's bundled libgcrypt loaded against Ubuntu's older
+  // libgpg-error at runtime and crashed with a missing symbol version. See
+  // scripts/strip-unsafe-appimage-libs.sh and AGENT.md's AppImage issues
+  // list for the full account.
+  assert.match(packageJson.scripts["build:linux"], /strip-unsafe-appimage-libs\.sh/);
+  const buildAppimageScript = await read("../scripts/build-appimage.sh");
+  assert.match(buildAppimageScript, /strip-unsafe-appimage-libs\.sh/);
+  const stripScript = await read("../scripts/strip-unsafe-appimage-libs.sh");
+  assert.match(stripScript, /libgcrypt\.so/);
+});
