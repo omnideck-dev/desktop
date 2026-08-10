@@ -34,11 +34,16 @@ const MUTATION_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
 /// The `jsonContract` version this app build was written against
 /// (`JSON_MODE_SPEC.md` §1). Bump only on a deliberate, reviewed change once
-/// the CLI's contract itself changes. `2` as of CLI `v0.10.0` — confirmed
-/// directly against a real `v0.10.0` sidecar binary's `--version --json`
-/// output and `contracts/json/v2/version.schema.json` in the CLI repo
-/// (`"jsonContract": { "const": 2 }`), not assumed from stale docs.
-pub const EXPECTED_JSON_CONTRACT: u64 = 2;
+/// the CLI's contract itself changes. `3` as of CLI `v0.11.0-alpha.2` —
+/// confirmed directly against a real `v0.11.0-alpha.2` sidecar binary's
+/// `--version --json` output and `contracts/json/v3/version.schema.json` in
+/// the CLI repo, not assumed from stale docs. Contract `3`'s actual changes
+/// (vs. `2`): `runtime ensure`'s NDJSON events gained `substage`/`status`
+/// fields and a `"permission"` state value, and the error envelope gained a
+/// `detail` field plus 4 new codes (`PERMISSION_CANCELLED`/
+/// `WINDOWS_FEATURES_FAILED`/`PACKAGE_INDEX_FAILED`/`INSTALLER_FAILED`) —
+/// all additive, all now handled in `bootstrap.rs`.
+pub const EXPECTED_JSON_CONTRACT: u64 = 3;
 
 /// The lowest CLI release this app build is verified against. Checked as a
 /// floor (`>=`), not an exact match — see
@@ -47,10 +52,11 @@ pub const EXPECTED_JSON_CONTRACT: u64 = 2;
 /// `vendor-manifest.json` pinned at build time (checksummed, so an exact
 /// runtime match would be redundant with that), so this check exists to
 /// catch a build mistake or corrupted binary, not to gate against a
-/// different externally-supplied CLI. `v0.10.0` specifically because it's
-/// the first CLI release with the finalized `JSON_MODE_SPEC.md` contract and
-/// `runtime`/`environment` commands this app (and `bootstrap.rs`) depend on.
-pub const MINIMUM_CLI_VERSION: &str = "v0.10.0";
+/// different externally-supplied CLI. `v0.11.0-alpha.2` specifically because
+/// that's the first CLI release with contract `3`'s `substage`/`status`/
+/// `"permission"`-state runtime-setup fields this app now depends on for
+/// its permission-wait UI (see `bootstrap.rs`'s `preparing_state`).
+pub const MINIMUM_CLI_VERSION: &str = "v0.11.0-alpha.2";
 
 /// The `omnideck` binary is bundled as a Tauri sidecar (`bundle.externalBin`
 /// in `tauri.conf.json`, source at `src-tauri/binaries/omnideck-<target-triple>`)
@@ -101,7 +107,7 @@ pub enum CliError {
     Timeout,
     /// `runtime status`/`runtime ensure`'s `schemaVersion` doesn't match
     /// [`EXPECTED_RUNTIME_SCHEMA`]. Independent from `jsonContract` — per the
-    /// CLI repo's `contracts/README.md`, "JSON contract 2 currently carries
+    /// CLI repo's `contracts/README.md`, "JSON contract 3 currently carries
     /// runtime status schema 4"; the two axes version separately.
     RuntimeSchemaMismatch { expected: u32, actual: u32 },
 }
@@ -111,6 +117,14 @@ pub struct CliErrorBody {
     pub code: String,
     pub message: String,
     pub hint: Option<String>,
+    /// Longer explanatory text alongside `message`/`hint` (JSON contract
+    /// v3's error envelope, new since v2) — e.g. `runtime ensure`'s Linux
+    /// permission-wait event explains *why* a native prompt is about to
+    /// appear before it does, per the sibling's setup-UX principle "explain
+    /// what's about to happen first". Not yet surfaced in `bootstrap.rs`'s
+    /// `error_state()` copy (still just uses `message`) — captured here so
+    /// it's available when that's worth doing.
+    pub detail: Option<String>,
     pub action: Option<String>,
     #[serde(rename = "actionValue")]
     pub action_value: Option<String>,
@@ -197,6 +211,7 @@ struct ErrorBody {
     code: String,
     message: String,
     hint: Option<String>,
+    detail: Option<String>,
     action: Option<String>,
     #[serde(rename = "actionValue")]
     action_value: Option<String>,
@@ -402,6 +417,7 @@ async fn run_json<R: tauri::Runtime>(
                 code: body.code,
                 message: body.message,
                 hint: body.hint,
+                detail: body.detail,
                 action: body.action,
                 action_value: body.action_value,
                 instances: body.instances,
@@ -534,20 +550,34 @@ pub async fn runtime_status<R: tauri::Runtime>(
 /// One line of `runtime ensure --json`'s NDJSON progress stream when there's
 /// actual setup work to do — distinct from [`StreamEvent`] (`add`/`update`/
 /// `remove`'s shape): carries `activity`/`progress` instead of `result`.
-/// Modeled directly on the CLI's `runtimeSetupEventPayload` (`cmd/runtime.go`).
+/// Modeled directly on the CLI's `RuntimeSetupEvent` (`engine/runtime_setup.go`).
+///
+/// `state` *is* captured here (unlike before CLI `v0.11.0-alpha.2`/contract
+/// `3`): the caller ([`runtime_ensure`]) still branches on `error`/`complete`
+/// before reaching this struct, but the remaining values now matter beyond
+/// just "start"/"progress" — a real `"permission"` state means the CLI is
+/// about to show (or is showing) a native OS permission prompt and is
+/// waiting on the user, not doing background work. `bootstrap.rs` uses this
+/// to follow the sibling's setup-UX principle of keeping native prompts
+/// visible and giving truthful "waiting for you" copy instead of a
+/// synthesized progress percentage. `substage`/`status` are also new in this
+/// contract version: `substage` is a stable machine-readable id (e.g.
+/// `"wsl-permission"`, `"package-index"`) for diagnostics; `status` is a
+/// short human label (e.g. `"Password required"`) distinct from the longer
+/// `activity` headline — see `engine/runtime_setup_linux_host.go` for a
+/// worked example of all four together.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RuntimeSetupEvent {
     pub stage: String,
-    // No `state` field: the caller ([`runtime_ensure`]) already branches on
-    // the raw JSON's `state` (start/progress/done/error) before deciding
-    // whether to deserialize into this struct at all — only genuine
-    // progress lines ever reach it — so a `state` field here would always
-    // read `"start"`/`"progress"` and never be consumed. Serde silently
-    // ignores the extra JSON key, matching the CLI's own "consumers must
-    // ignore unknown fields" contract (`contracts/README.md`).
+    #[serde(default)]
+    pub substage: Option<String>,
+    #[serde(default)]
+    pub state: Option<String>,
     #[serde(default)]
     pub activity: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
     #[serde(default)]
     pub detail: Option<String>,
     #[serde(default)]
@@ -609,6 +639,7 @@ where
                             code: body.code,
                             message: body.message,
                             hint: body.hint,
+                            detail: body.detail,
                             action: body.action,
                             action_value: body.action_value,
                             instances: body.instances,
@@ -890,6 +921,7 @@ async fn run_ndjson_stream<R: tauri::Runtime>(
                         code: body.code,
                         message: body.message,
                         hint: body.hint,
+                        detail: body.detail,
                         action: body.action,
                         action_value: body.action_value,
                         instances: body.instances,
@@ -1066,6 +1098,7 @@ mod tests {
             code: "AMBIGUOUS_INSTANCE".to_string(),
             message: "Multiple instances found — specify --name".to_string(),
             hint: None,
+            detail: None,
             action: None,
             action_value: None,
             instances: Some(vec!["demo".to_string(), "work".to_string()]),
@@ -1156,14 +1189,15 @@ mod tests {
         assert_eq!(result.checks[0].action, None);
     }
 
-    /// Pins the exact string the real bundled `v0.10.0` sidecar reports
-    /// (verified directly against a downloaded release binary, not assumed)
-    /// so a future contract/version bump can't silently drift this fixture.
+    /// Pins the exact string the real bundled `v0.11.0-alpha.2` sidecar
+    /// reports (verified directly by running a downloaded release binary's
+    /// `--version --json`, not assumed) so a future contract/version bump
+    /// can't silently drift this fixture.
     #[test]
-    fn version_info_parses_the_real_v0_10_0_shape() {
-        let raw = r#"{"version":"v0.10.0","commit":"e51b53de304d","date":"2026-08-08T16:43:12Z","jsonContract":2}"#;
+    fn version_info_parses_the_real_v0_11_0_alpha_2_shape() {
+        let raw = r#"{"version":"v0.11.0-alpha.2","commit":"6ea721020691","date":"2026-08-09T23:44:42Z","jsonContract":3}"#;
         let info: VersionInfo = serde_json::from_str(raw).unwrap();
-        assert_eq!(info.version, "v0.10.0");
+        assert_eq!(info.version, "v0.11.0-alpha.2");
         assert_eq!(info.json_contract, EXPECTED_JSON_CONTRACT);
         assert!(meets_minimum_version(&info.version, MINIMUM_CLI_VERSION));
     }
@@ -1262,8 +1296,24 @@ mod tests {
         let raw = r#"{"stage":"software","state":"progress","activity":"Getting your computer ready…","detail":"Downloading Podman…","progress":0.4}"#;
         let event: RuntimeSetupEvent = serde_json::from_str(raw).unwrap();
         assert_eq!(event.stage, "software");
+        assert_eq!(event.state.as_deref(), Some("progress"));
         assert_eq!(event.detail.as_deref(), Some("Downloading Podman…"));
         assert_eq!(event.progress, Some(0.4));
+        assert_eq!(event.substage, None);
+        assert_eq!(event.status, None);
+    }
+
+    /// Real shape from `engine/runtime_setup_linux_host.go`'s permission-wait
+    /// event (CLI `v0.11.0-alpha.2`, contract `3`) — the first real use of
+    /// `state: "permission"`/`substage`/`status` together.
+    #[test]
+    fn runtime_setup_event_parses_a_permission_wait_line() {
+        let raw = r#"{"stage":"software","substage":"linux-permission","state":"permission","activity":"Waiting for approval from your computer…","status":"Password required","detail":"Your computer will ask you to approve installing Podman — the software omnideck uses to run in an isolated space. omnideck never sees or stores your password."}"#;
+        let event: RuntimeSetupEvent = serde_json::from_str(raw).unwrap();
+        assert_eq!(event.state.as_deref(), Some("permission"));
+        assert_eq!(event.substage.as_deref(), Some("linux-permission"));
+        assert_eq!(event.status.as_deref(), Some("Password required"));
+        assert_eq!(event.progress, None);
     }
 
     /// Canned fixture from a real `config show --name demo --json` run.

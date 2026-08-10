@@ -6,39 +6,40 @@ Instructions for any agent (human or AI) building and maintaining this repo.
 
 The Tauri v2 + React/TypeScript rewrite of the Omnideck desktop app, replacing the Electron app at `omnideck/desktop/` in the `omnideck` monorepo. It's a thin GUI shell over the `omnideck` CLI — almost no container/lifecycle logic belongs in this repo; that all lives in the CLI and is reached through its `--json` contract.
 
-**Current status: sequencing steps 2–4 done** (Tauri mechanics, read-only dashboard, and lifecycle actions — see `desktop_tauri_rewrite.md`'s Sequencing section). `src-tauri/` and `src/` build clean (`cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `npm run build` all pass). `cli_bridge.rs` + `commands.rs` cover `list`/`status`/`logs`/`start`/`stop`/`restart`/`add`/`remove` against the real CLI JSON/NDJSON contract, with `cargo test` fixtures pinning the JSON shapes. The frontend has an app shell (Dashboard/Settings nav) on the ported SIGNAL tokens: Dashboard polls `list --json` with per-row Start/Stop/Restart/Logs/Remove, a New Deck form streaming `add --json` progress, a Remove confirmation dialog with the CLI's required explicit keep/delete + backup choices, and a blocking screen for CLI-missing/contract-mismatch. Every backend command was verified against the real CLI directly (not just typechecked) before being trusted. `update_instance`, instance detail drill-in (DESIGN.md #6), and Open UI instance webview tabs (DESIGN.md #7) are done — the "still to do" list below was stale about these. **Hardening-migration Phases 1–4 are done** (see `reference/desktop-hardening-migration-PLAN.md`): sidecar pinned+checksummed against real CLI `v0.10.0` (`vendor-manifest.json`, `fetch:sidecars`/`verify:sidecars`), `EXPECTED_JSON_CONTRACT` corrected to `2` with a `MINIMUM_CLI_VERSION` floor check, the dashboard capability replaced with an enumerated `dashboard-bridge` allowlist, `cli_bridge.rs` now bounds stdout/stderr and enforces per-operation timeouts via a unified `run_cli` helper with correct NDJSON line reassembly across chunk boundaries, `tauri-plugin-single-instance` is wired up, and the AppImage runtime fixes were confirmed still intact and still build clean. **Hardening-migration Phase 5 is also done**: `bootstrap.rs` drives the shared Podman runtime's
+**Current status: sequencing steps 2–4 done** (Tauri mechanics, read-only dashboard, and lifecycle actions — see `desktop_tauri_rewrite.md`'s Sequencing section). `src-tauri/` and `src/` build clean (`cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `npm run build` all pass). `cli_bridge.rs` + `commands.rs` cover `list`/`status`/`logs`/`start`/`stop`/`restart`/`add`/`remove` against the real CLI JSON/NDJSON contract, with `cargo test` fixtures pinning the JSON shapes. The frontend has an app shell (Dashboard/Settings nav) on the ported SIGNAL tokens: Dashboard polls `list --json` with per-row Start/Stop/Restart/Logs/Remove, a New Deck form streaming `add --json` progress, a Remove confirmation dialog with the CLI's required explicit keep/delete + backup choices, and a blocking screen for CLI-missing/contract-mismatch. Every backend command was verified against the real CLI directly (not just typechecked) before being trusted. `update_instance`, instance detail drill-in (DESIGN.md #6), and Open UI instance webview tabs (DESIGN.md #7) are done — the "still to do" list below was stale about these. **Hardening-migration Phases 1–4 are done** (see `reference/desktop-hardening-migration-PLAN.md`): sidecar pinned+checksummed against real CLI `v0.11.0-alpha.2` (`vendor-manifest.json`, `fetch:sidecars`/`verify:sidecars`), `EXPECTED_JSON_CONTRACT` at `3` with a `MINIMUM_CLI_VERSION` floor check, the dashboard capability replaced with an enumerated `dashboard-bridge` allowlist, `cli_bridge.rs` now bounds stdout/stderr and enforces per-operation timeouts via a unified `run_cli` helper with correct NDJSON line reassembly across chunk boundaries, `tauri-plugin-single-instance` is wired up, and the AppImage runtime fixes were confirmed still intact and still build clean. **Hardening-migration Phase 5 is also done**: `bootstrap.rs` drives the shared Podman runtime's
 readiness via `cli_bridge::runtime_status`/`runtime_ensure` (correcting this doc's earlier claim that the
-CLI had no equivalent — it does, as of `v0.10.0`) and owns the 3-command IPC surface
-(`bootstrap`/`begin_setup`/`run_action`), folded into the dashboard's own `dashboard-bridge` capability
-and called from the single `"main"` window. **This wasn't the original design** — onboarding first
-shipped as a second, isolated `"onboarding"` window (own capability, hidden via `WebviewWindowBuilder`,
-vanilla JS/CSS UI ported from the sibling's `web/`), on the theory that window-scoped capabilities are a
-real security boundary worth having. That held up until real hardware testing found it caused a genuine
-bug: creating two GTK/WebKit windows at startup (one hidden) failed EGL/GPU-driver init
-(`EGL_BAD_PARAMETER`, blank white dashboard) on a real Intel Iris Xe/Mesa 26.1.4 combination, reproduced
-independently in the sibling app's own build too — i.e. not something specific to this repo's port. Fixed
-by removing the second window entirely: onboarding is now just another React screen
-(`src/components/OnboardingView.tsx`, `src/hooks/useBootstrap.ts`) that `App.tsx` swaps in for the
-dashboard until the shared runtime is ready, using the exact same `SetupState` push model
-(`tauri::ipc::Channel`) as before. **Real, knowingly-accepted tradeoff**: the bootstrap commands are no
-longer isolated behind a separate capability grant the way a second window enforced — see `bootstrap.rs`'s
-module doc comment and `reference/desktop-hardening-migration-PLAN.md`'s "Decisions from review" for the
-full history of both the original design and the reversal. Two real bootstrap phases
-(`software`/`environment`, matching the CLI's own `runtime ensure` stages exactly — no `download`/`startup`
-phase here, since pulling an image and creating a Deck is the dashboard's separate, already-built
-`add_instance` flow). No resume-record file — `bootstrap.rs`'s doc comment explains why one isn't needed
-here. Test coverage: `tests/policy.test.mjs` (security-posture assertions, `node --test`, wired into
-`npm run test:policy` and the `verify` composite), `tests/manual/*.md` (clean-first-run and
-recovery-lifecycle procedures), and `tests/hardware/validate-proof.mjs` (packaged-build smoke check,
-`OMNIDECK_DESKTOP_SMOKE_FILE`-gated in `lib.rs`). Verified end-to-end: `npm run verify` clean (fetch/verify
-sidecars, policy tests, typecheck, fmt, Rust tests, clippy), a real `npm run dev:app` launch and a real
-`npm run build:appimage` + `run:appimage` launch with no crashes/coredumps/EGL errors, single window
-confirmed. Still to do: onboarding visual polish/copy review, migration (legacy Electron data → CLI-managed
-instance — untouched by this session, still the highest-risk remaining path per this doc's rules above),
-and Phase 6/7 of the hardening plan (CI, release engineering — explicitly deferred in that doc until this
-repo actually gets CI / cuts a first release, not preemptive work). Update this file as decisions firm up;
-don't let it go stale the way the docs it was built from briefly did (see `reference/` for why local
-copies of prior art exist now).
+CLI had no equivalent — it does, as of `v0.10.0`) and owns the 4-command IPC surface
+(`bootstrap`/`begin_setup`/`open_dashboard`/`run_action`) for the isolated `"onboarding"` window, created
+hidden via `WebviewWindowBuilder` in `lib.rs`'s `setup()` hook and scoped to its own `onboarding-bridge`
+capability (never `"main"`, which is the dashboard here). **This design was briefly reverted to a single
+window** mid-development, on the theory that two GTK/WebKit windows at startup caused a real
+`EGL_BAD_PARAMETER` crash on some Linux hardware — it didn't; the actual cause was CI building the Linux
+AppImage on bare `ubuntu-24.04` instead of a container matching this repo's own Fedora dev toolbox (full
+account in "The `EGL_BAD_PARAMETER` AppImage crash: what actually fixed it" below). Once that was
+confirmed, the two-window design came back — it's closer to the sibling's own setup flow (which has since
+matured with real VM-based testing this repo deliberately doesn't fully adopt, see `TESTING.md`) and
+restores the real capability-isolation boundary a single window can't provide. The onboarding UI itself
+(`public/onboarding/{index.html,setup.css,setup.js,host-adapter.js}`) is vanilla JS/CSS, ported from the
+sibling's `web/` and adapted to this repo's two real bootstrap phases (`software`/`environment`, matching
+the CLI's own `runtime ensure` stages exactly — no `download`/`startup` phase here, since pulling an image
+and creating a Deck is the dashboard's separate, already-built `add_instance` flow), now also surfacing
+CLI contract `3`'s `substage`/`status` fields and `"permission"`-state (native OS prompt) handling — see
+`bootstrap.rs`'s `SetupState.awaitingPermission`. No resume-record file — `bootstrap.rs`'s doc comment
+explains why one isn't needed here. Test coverage: `tests/policy.test.mjs` (security-posture assertions,
+`node --test`, wired into `npm run test:policy` and the `verify` composite), `tests/host-adapter.test.mjs`
+(runs the real `host-adapter.js` in Node's `vm` module against a fake `window.__TAURI__`, ported from the
+sibling's technique — this is what caught a real gap: a rejected automatic `bootstrap()` call had no error
+reporting at all, fixed the same session), `tests/setup-ux-principles.md` (ported product/test contract for
+the onboarding flow), `tests/manual/*.md` (clean-first-run and recovery-lifecycle procedures), and
+`tests/hardware/validate-proof.mjs` (packaged-build smoke check, `OMNIDECK_DESKTOP_SMOKE_FILE`-gated in
+`lib.rs`). Verified end-to-end: `npm run verify` clean (fetch/verify sidecars, policy tests, typecheck,
+fmt, Rust tests, clippy), a real `npm run dev:app` launch and a real `npm run build:appimage` +
+`run:appimage` launch with no crashes/coredumps, two windows confirmed. Still to do: onboarding visual
+polish/copy review, migration (legacy Electron data → CLI-managed instance — untouched by this session,
+still the highest-risk remaining path per this doc's rules above), and Phase 7 of the hardening plan
+(release engineering beyond what `release.yml` already does — explicitly deferred until there's a concrete
+need, not preemptive work). Update this file as decisions firm up; don't let it go stale the way the docs
+it was built from briefly did (see `reference/` for why local copies of prior art exist now).
 
 ## Read first, in order
 
@@ -104,7 +105,7 @@ Scaffolded and verified working (sequencing step 2 + a first read-only slice of 
   ```
   But the compiled binary must *run* on the host, not inside the toolbox — confirmed the hard way: a toolbox has no `podman` of its own, and even the host's `podman` binary reached via the toolbox's `/run/host` bind mount crashes there (needs namespace/capability access a toolbox doesn't grant), while the compiled Tauri binary's runtime deps (webkit2gtk, gtk3) already resolve cleanly on the bare host (`ldd` reports nothing missing — this image ships those runtime libs even though the `-devel`/pkgconfig files were never installed). So: **run `npm run dev:app`**, which handles this automatically (`scripts/dev.sh` — builds inside the toolbox, then runs the result directly on the host, with Vite also on the host). Don't hand-roll `toolbox run ... tauri dev`; it'll compile fine and then fail every podman-backed action. macOS/Windows/non-atomic-Linux contributors don't need any of this — the script just runs `npm run tauri dev` directly there.
 - **Scaffold**: already done — `npm create tauri-app@latest -- --template react-ts` plus `npm run tauri add shell` (adds `tauri-plugin-shell` for CLI subprocess spawning). **`create-tauri-app`'s `--force`/`-f` flag does not mean "tolerate a non-empty directory," it means "overwrite/delete what's there."** Running it against this repo's root once wiped every untracked planning doc (`AGENT.md`, `DESIGN.md`, `desktop_tauri_rewrite.md`, `reference/`, `wireframes/`) with no prompt and no way to recover via git (they'd never been committed). Recovered that time only because sources for each file happened to still exist elsewhere (session transcript, the `omnideck` monorepo, the user's Downloads folder) — don't count on that luck twice. **Never re-run the scaffold command against a non-empty target directory.** If you ever need to re-scaffold, do it in an empty temp dir and merge by hand.
-- **CLI sidecar**: bundled via Tauri's `externalBin` mechanism (`bundle.externalBin: ["binaries/omnideck"]` in `tauri.conf.json`; `cli_bridge.rs` spawns it with `app.shell().sidecar("omnideck")`, never PATH). **Pinned by version + checksum as of `omnideck-dev/cli` `v0.10.0`** (its first release with the finalized `JSON_MODE_SPEC.md` contract) — `src-tauri/binaries/vendor-manifest.json` records the tag, commit, download URLs, and archive/binary/SBOM SHA-256s for all six target triples; the local-unpinned-build exception this note used to describe is resolved. Run `npm run fetch:sidecars` to download+verify all six (or `node scripts/fetch-sidecars.mjs <target-triple>` for just one), writing `src-tauri/binaries/omnideck-<target-triple>[.exe]` (gitignored — only `vendor-manifest.json` is committed). `npm run verify:sidecars` re-checksums already-fetched binaries without re-downloading. `OMNIDECK_CLI_ARCHIVE_DIR` may point at a directory of pre-downloaded release archives for an offline/sandboxed fetch; the pinned hashes are still enforced either way. `cli_bridge.rs::version()` checks both `EXPECTED_JSON_CONTRACT` (`2` as of `v0.10.0`, exact match) and `MINIMUM_CLI_VERSION` (`v0.10.0`, floor — not exact, since the sidecar is always exactly what the manifest pinned at build time; see `reference/desktop-hardening-migration-PLAN.md`'s "Decisions from review" for why floor-not-exact). To bump the pinned version: re-run the manifest-generation steps in that plan doc's Phase 1 against the new tag's real GitHub release assets (don't hand-edit checksums), then update `MINIMUM_CLI_VERSION`/`EXPECTED_JSON_CONTRACT` in `cli_bridge.rs` in the same change.
+- **CLI sidecar**: bundled via Tauri's `externalBin` mechanism (`bundle.externalBin: ["binaries/omnideck"]` in `tauri.conf.json`; `cli_bridge.rs` spawns it with `app.shell().sidecar("omnideck")`, never PATH). **Pinned by version + checksum as of `omnideck-dev/cli` `v0.11.0-alpha.2`** (bumped from `v0.10.0` — this tag's JSON contract `3` adds `runtime ensure` NDJSON `substage`/`status` fields and a `"permission"` state value, plus 4 new error codes, all now consumed in `bootstrap.rs`; confirmed directly by downloading the real release, cross-checking its own published `SHA256SUMS`, and running the extracted binary's `--version --json`, not assumed) — `src-tauri/binaries/vendor-manifest.json` records the tag, commit, download URLs, and archive/binary/SBOM SHA-256s for all six target triples. Run `npm run fetch:sidecars` to download+verify all six (or `node scripts/fetch-sidecars.mjs <target-triple>` for just one), writing `src-tauri/binaries/omnideck-<target-triple>[.exe]` (gitignored — only `vendor-manifest.json` is committed). `npm run verify:sidecars` re-checksums already-fetched binaries without re-downloading. `OMNIDECK_CLI_ARCHIVE_DIR` may point at a directory of pre-downloaded release archives for an offline/sandboxed fetch; the pinned hashes are still enforced either way. `cli_bridge.rs::version()` checks both `EXPECTED_JSON_CONTRACT` (`3` as of `v0.11.0-alpha.2`, exact match) and `MINIMUM_CLI_VERSION` (`v0.11.0-alpha.2`, floor — not exact, since the sidecar is always exactly what the manifest pinned at build time; see `reference/desktop-hardening-migration-PLAN.md`'s "Decisions from review" for why floor-not-exact). To bump the pinned version: re-run the manifest-generation steps in that plan doc's Phase 1 against the new tag's real GitHub release assets (don't hand-edit checksums — download the real archives, verify against the tag's own `SHA256SUMS` release asset, extract and hash the binary yourself), then update `MINIMUM_CLI_VERSION`/`EXPECTED_JSON_CONTRACT` in `cli_bridge.rs` in the same change.
 - **Frontend**: `npm install`, `npm run dev` (Vite only) or `npm run dev:app` (full app — see above), `npm run build` (typecheck + production bundle — works on the bare host). No test runner wired in yet — Vitest is still the natural fit; decide and record here when it lands.
 - **Backend**: from `src-tauri/` inside the toolbox — `cargo build`, `cargo test` (fixture tests against canned JSON, no real CLI/podman needed), `cargo clippy -- -D warnings`, `cargo fmt`.
 - **Full packaged app (Linux AppImage; other bundle targets untested here)**: `npm run build:appimage`, then `npm run run:appimage` to launch it (`scripts/build-appimage.sh` / `scripts/run-appimage.sh`). Since this is a release build, sidecar resolution works the same way as dev (no debug/PATH fallback involved) — the bundled `omnideck` binary ships inside the AppImage. Five real issues had to be worked through to get a *correctly functioning* AppImage out of this toolbox, all now handled automatically by the scripts/code below — worth knowing about if a rebuild ever breaks again:
@@ -114,6 +115,44 @@ Scaffolded and verified working (sequencing step 2 + a first read-only slice of 
   - **`LD_LIBRARY_PATH` leaking into podman itself, breaking container inspection silently (`status: "unknown"` for every instance, even running ones — no crash, no error, just wrong answers)**: the AppImage runtime sets `LD_LIBRARY_PATH` (among other vars) so *our own* GTK/WebKit process finds its bundled libraries — but every child process inherits it by default, including the `omnideck` sidecar and, in turn, *its* child, podman. Podman dynamically linking against the AppImage's bundled versions of libraries it also happens to depend on (instead of the host's) is enough to break container inspection without erroring outright. Root-caused by comparing the real running app's full `/proc/<pid>/environ` against a manual reproduction that initially didn't reproduce the bug (because it used a stripped-down `env -i` environment that accidentally avoided the problem) — not a guess, verified end-to-end with the fix applied. Fixed in `cli_bridge.rs`'s `sidecar_command()` helper, which clears `LD_LIBRARY_PATH` specifically (the only var of the AppImage-injected set that actually affects `ld.so`'s dynamic linking) before every sidecar spawn.
   - **Separately** (not yet root-caused as environment-specific vs. universal): the packaged AppImage's default FUSE-mount execution exits silently within a few seconds in this setup — the loose `AppDir/AppRun` and `--appimage-extract-and-run` both stay running reliably in every test, the plain double-executed `.AppImage` never did. `run-appimage.sh` always passes `--appimage-extract-and-run`. If you ever build for real distribution, re-test the plain (no-flag) launch on a target machine before assuming this flag is required everywhere — it may be specific to FUSE behavior inside this toolbox.
   - **The AppImage's *build machine's OS* matters, not just its build flags**: `linuxdeploy` bundles whatever GTK/WebKit/libepoxy shared libraries exist on the machine that runs the build. A `.github/workflows/release.yml` Linux build running directly on `ubuntu-24.04` produced an AppImage that reliably crashed at launch on a real Intel Iris Xe / Mesa 26.1.4 machine (`Could not create default EGL display: EGL_BAD_PARAMETER`), while the exact same source built in this Fedora 42 toolbox launched fine on that same machine — confirmed by diffing the two builds' bundled `webkit2gtk-4.1`/`gtk3`/`libepoxy` binaries directly (genuinely different sizes, i.e. different upstream versions — not a stripping artifact; `NO_STRIP=1` alone was tried first and did not fix it). Fixed by having CI's Linux leg build inside a `container: fedora:42` (matching this toolbox's own Fedora version) instead of on the bare `ubuntu-24.04` runner — see `release.yml`'s comments on the `linux-x64` matrix entry for the full account, including the exact `dnf` package list confirmed against a real `podman run fedora:42` before being wired into CI.
+
+### The `EGL_BAD_PARAMETER` AppImage crash: what actually fixed it
+
+Kept as its own section, separate from the bullet list above, because the investigation touched several
+files across several rounds and it's easy to misattribute the fix to the wrong one of them later. **The one
+change that fixed it**: CI's Linux release build moved from running directly on `ubuntu-24.04` to running
+inside a `container: fedora:42` on that same runner (`release.yml`'s `linux-x64` matrix entry) — because
+`linuxdeploy` bundles whatever GTK/WebKit/libepoxy libraries exist on the *build machine*, and Ubuntu's
+versions of those crashed on at least one real Intel Iris Xe/Mesa 26.1.4 machine while Fedora's (this
+repo's own toolbox's OS) didn't. Confirmed by downloading the real published release artifact and diffing
+its bundled libraries against a local build, not inferred.
+
+Three other changes were made first, in this order, on reasonable-sounding theories that each turned out
+**not** to be the cause — recorded here so nobody re-spends time re-testing them:
+
+1. Removing the second (`"onboarding"`) window in favor of a single window. Reasonable theory (two
+   GTK/WebKit windows at once, one hidden, seemed like a plausible EGL trigger), and a real, separately
+   confirmed-working `EGL_BAD_PARAMETER` fix *in one specific test* — but that test also happened to mean
+   the code path that later turned out to matter (`bootstrap`) never ran at all, which is why it didn't
+   generalize. **Reverted once the real cause was confirmed** — this repo is back to the original
+   two-window design (see the status paragraph above), since the capability-isolation boundary a second
+   window provides is worth having once it's no longer implicated in a real crash.
+2. Converting `bootstrap.rs` from `tauri::ipc::Channel`/a `WebviewWindow` command parameter to plain
+   `app.emit()`/`AppHandle`-only (matching every other command in the app). Also a reasonable theory
+   (those two mechanisms were genuinely unique to that module at the time) and also not it. **Also
+   reverted** alongside the window count — the sibling's own production code uses this exact
+   `Channel`/`WebviewWindow` pattern today, at scale, with no EGL issue, which was itself part of the
+   evidence this wasn't the cause.
+3. `NO_STRIP=1` on the CI build. Tried on the theory that `ubuntu-24.04`'s `strip` silently corrupted a
+   bundled library instead of erroring the way the toolbox's older binutils does. Confirmed directly (the
+   resulting binary really was unstripped) and it still crashed. **Still kept and still necessary** —
+   Fedora's binutils has the *same* `.relr.dyn` build-failure issue the toolbox has (see the bullet above),
+   so `build:linux` still needs it now that the build runs in a Fedora container — just not for the reason
+   it was first added.
+
+If this class of bug ever resurfaces: check the build container's OS/library versions before re-litigating
+window count or IPC mechanism again — both were real, reasonable hypotheses that cost real debugging time
+precisely because they *sounded* plausible, not because the evidence actually supported them.
 
 ## Testing expectations
 

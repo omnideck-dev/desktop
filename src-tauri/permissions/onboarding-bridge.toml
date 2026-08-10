@@ -1,0 +1,8 @@
+# The exact 4-command IPC surface the isolated onboarding window may drive.
+# Every command here re-checks window.label() == "onboarding" itself
+# (bootstrap.rs::authorize_onboarding) — this capability grant is the outer
+# layer, not the only one.
+[[permission]]
+identifier = "onboarding-bridge"
+description = "Allows the isolated onboarding window to drive the typed omnideck runtime bootstrap."
+commands.allow = ["bootstrap", "begin_setup", "open_dashboard", "run_action"]

@@ -4,15 +4,11 @@ import BlockingScreen from "./components/BlockingScreen";
 import DashboardView from "./components/dashboard/DashboardView";
 import ExternalPage from "./components/ExternalPage";
 import InstanceWebviewTab from "./components/InstanceWebviewTab";
-import OnboardingView from "./components/OnboardingView";
 import SettingsView from "./components/SettingsView";
-import { useBootstrap } from "./hooks/useBootstrap";
 import { useCliVersion } from "./hooks/useCliVersion";
 
 export default function App() {
   const cliVersion = useCliVersion();
-  const bootstrap = useBootstrap(cliVersion.status === "ok");
-  const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [view, setView] = useState<View>("dashboard");
   const [openTabs, setOpenTabs] = useState<InstanceTab[]>([]);
 
@@ -40,35 +36,6 @@ export default function App() {
 
   if (cliVersion.status === "error") {
     return <BlockingScreen error={cliVersion.error} />;
-  }
-
-  // Skip the onboarding screen entirely once the shared runtime was already
-  // ready on the very first bootstrap check (the normal day-to-day launch)
-  // — only a first run or a repair actually shows it. Once shown, it stays
-  // dismissed only via the user's own "Continue" click (onboardingComplete),
-  // not by the state simply reaching "ready" — see OnboardingView's doc
-  // comment for why an automatic swap away from a just-finished screen
-  // would be jarring.
-  const showOnboarding = !bootstrap.initiallyReady && !onboardingComplete;
-  if (showOnboarding) {
-    if (!bootstrap.state) {
-      return (
-        <div className="checking-screen">
-          <div className="spinner" aria-label="Working" />
-          <p>Checking your setup…</p>
-        </div>
-      );
-    }
-    return (
-      <OnboardingView
-        state={bootstrap.state}
-        actionError={bootstrap.actionError}
-        actionPending={bootstrap.actionPending}
-        onBeginSetup={bootstrap.beginSetup}
-        onRunAction={bootstrap.runAction}
-        onContinue={() => setOnboardingComplete(true)}
-      />
-    );
   }
 
   const activeTab = openTabs.find((t) => view === instanceView(t.name));

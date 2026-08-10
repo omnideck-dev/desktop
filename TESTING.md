@@ -10,6 +10,11 @@ A passing build proves only its stated layer. Compilation is not
 installation, a cross-build is not native execution, and an unexecuted
 manual procedure is `blocked` coverage, not a pass.
 
+[`tests/setup-ux-principles.md`](tests/setup-ux-principles.md) is the
+product/test contract the onboarding flow (below) must preserve — read it
+before touching `bootstrap.rs`, `public/onboarding/`, or the onboarding
+half of `tests/policy.test.mjs`.
+
 ## Test layers
 
 | Layer | Implementation | Where it runs | Proves |
@@ -28,18 +33,26 @@ release goes out to actual users — see `RELEASING.md`.
 Source tests (`tests/policy.test.mjs`) keep the following invariants
 release-blocking:
 
-- the dashboard's (single `"main"` window's) capability is an enumerated
-  allowlist (`dashboard-bridge`), never `core:default`;
-- every bootstrap command (`bootstrap`/`begin_setup`/`run_action`)
-  re-checks `window.label() == "main"` server-side, not just the
-  capability grant;
-- `bootstrap.rs` never manages window visibility — asserted by absence, so
-  a future onboarding tweak can't quietly reintroduce the second window
-  that caused a real EGL/GPU-driver startup bug on some hardware (see
-  `AGENT.md` and `bootstrap.rs`'s doc comment for the full story; onboarding
-  is now a plain React screen `App.tsx` swaps in, not a separate window);
+- the dashboard window's capability is an enumerated allowlist
+  (`dashboard-bridge`), never `core:default`;
+- the onboarding window's capability (`onboarding-bridge`) is scoped to
+  `"windows": ["onboarding"]` only — never `"main"`, which is the dashboard
+  here (this exact mistake was caught once already; see the policy test's
+  own comment);
+- every onboarding command re-checks `window.label() == "onboarding"` *and*
+  the window's actual URL server-side, not just the capability grant;
+- `bootstrap()` only reveals the onboarding window when setup is actually
+  needed — never unconditionally (this was a real, caught-and-fixed
+  regression, and separately: this repo briefly went single-window
+  mid-development suspecting the two-window pattern itself caused a real
+  `EGL_BAD_PARAMETER` crash — it didn't, see `AGENT.md`'s postmortem
+  section, and the two-window design is what's current again);
+- `tests/host-adapter.test.mjs` runs the real onboarding `host-adapter.js`
+  against a fake Tauri bridge in Node's `vm` module, proving the actual IPC
+  invocation sequence;
 - the CLI sidecar is pinned by checksum for all 6 target triples, and the
-  runtime version check is a floor (`>= v0.10.0`), not an exact match;
+  runtime version check is a floor (`>= v0.11.0-alpha.2`), not an exact
+  match;
 - sidecar process output is bounded and every operation has a timeout.
 
 ## Release gating

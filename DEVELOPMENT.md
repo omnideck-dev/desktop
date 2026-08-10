@@ -13,7 +13,7 @@ Detailed setup, testing, and command reference. See [`README.md`](./README.md) f
   npm run verify:sidecars     # re-checksums without re-downloading (cheap, e.g. in CI)
   ```
   `src-tauri/binaries/vendor-manifest.json` records the pinned tag/commit/checksums (committed); the fetched binaries themselves are gitignored. `OMNIDECK_CLI_ARCHIVE_DIR=/path/to/archives` points `fetch:sidecars` at pre-downloaded release archives for an offline/sandboxed build — the pinned hashes are still enforced either way.
-- **Podman**, installed — needed for the dashboard to show real Deck data and for the onboarding flow's "already ready" path to actually be ready. If Podman genuinely isn't ready, the app's own onboarding screen is what sets it up; you don't need to pre-provision it by hand to develop against this repo, just to see the dashboard's populated state instead of an empty list.
+- **Podman**, installed — needed for the dashboard to show real Deck data and for the onboarding flow's "already ready" path to actually be ready. If Podman genuinely isn't ready, the app's own onboarding window is what sets it up; you don't need to pre-provision it by hand to develop against this repo, just to see the dashboard's populated state instead of an empty list.
 
 ### Linux on an immutable/atomic distro (Fedora Silverblue, Bluefin, etc.)
 
@@ -39,7 +39,7 @@ npm run dev               # frontend only, no Rust/webview (fast iteration on Re
 
 `npm run dev:app` is the correct entrypoint on every platform — it's a thin wrapper (`scripts/dev.sh`) that only does the toolbox dance on Linux; macOS/Windows/non-atomic-Linux just get `npm run tauri dev` directly. Don't run `npm run tauri dev` by hand on an atomic-Linux dev box.
 
-The app window opens immediately showing a real "Checking your setup…" state, then either the populated Dashboard or a blocking screen if the CLI sidecar is missing/version-mismatched — see `AGENT.md`'s "instant open" rule if you're touching startup code. If the shared Podman runtime isn't ready yet, the onboarding screen (`src/components/OnboardingView.tsx`) renders in place of the dashboard instead; see below for how to preview its screens without needing an actually-unprovisioned machine.
+The dashboard window opens immediately showing a real "Checking your setup…" state, then either the populated Dashboard or a blocking screen if the CLI sidecar is missing/version-mismatched — see `AGENT.md`'s "instant open" rule if you're touching startup code. If the shared Podman runtime isn't ready yet, the onboarding window appears instead; see below for how to preview its screens without needing an actually-unprovisioned machine.
 
 ### Testing the onboarding flow
 
@@ -48,11 +48,12 @@ Onboarding only shows up for real when Podman genuinely isn't ready — which, o
 ```bash
 OMNIDECK_DEBUG_ONBOARDING_STAGE=welcome npm run dev:app
 OMNIDECK_DEBUG_ONBOARDING_STAGE=preparing npm run dev:app
+OMNIDECK_DEBUG_ONBOARDING_STAGE=permission npm run dev:app
 OMNIDECK_DEBUG_ONBOARDING_STAGE=ready npm run dev:app
 OMNIDECK_DEBUG_ONBOARDING_STAGE=error npm run dev:app
 ```
 
-Each value forces `OnboardingView` to render showing that exact screen — real render, real buttons, no real Podman calls made for the check itself. `welcome`'s "Set up Omnideck" button still calls the real `begin_setup`, though: since your Podman is presumably actually ready, that resolves to the real `ready` state almost instantly, which is a nice free integration check of the real `runtime ensure` idempotent-no-op path.
+Each value forces the onboarding window to open showing that exact screen — real render, real buttons, no real Podman calls made for the check itself. `permission` previews the "waiting on a native OS prompt" treatment (CLI contract `3`'s `runtime ensure` `"permission"` state — a truthful "Waiting for approval" state, not a synthesized percentage; see `tests/setup-ux-principles.md`). `welcome`'s "Set up Omnideck" button still calls the real `begin_setup`, though: since your Podman is presumably actually ready, that resolves to the real `ready` state almost instantly, which is a nice free integration check of the real `runtime ensure` idempotent-no-op path.
 
 This is `debug_forced_state()` in `src-tauri/src/bootstrap.rs`, `#[cfg(debug_assertions)]`-gated — the function and the env var read don't exist at all in a release build (`cargo build --release`/`tauri build`), so there's no flag to accidentally ship enabled.
 
@@ -69,7 +70,7 @@ If you need to test the *real* first-run install path (not just the screens), th
   cargo clippy -- -D warnings
   cargo fmt
   ```
-- **Policy tests** (`npm run test:policy`, `tests/policy.test.mjs`): security-posture assertions on the capability files, the bootstrap commands' `window.label() == "main"` authorization checks, the CLI sidecar pin, and the process hardening (output bounds, timeouts) — so a future PR can't silently widen the attack surface without a test failing. Uses Node's built-in test runner, no extra dependency.
+- **Policy tests** (`npm run test:policy`, `tests/policy.test.mjs`): security-posture assertions on the capability files, the onboarding commands' `window.label() == "onboarding"` (never `"main"`) authorization checks, the CLI sidecar pin, and the process hardening (output bounds, timeouts) — so a future PR can't silently widen the attack surface without a test failing. `tests/host-adapter.test.mjs` runs the real `public/onboarding/host-adapter.js` inside Node's `vm` module against a fake Tauri bridge, proving the actual IPC invocation sequence without a real Tauri runtime. Both use Node's built-in test runner, no extra dependency.
 - **Manual/integration verification against the real CLI** — the most reliable way to confirm a `cli_bridge.rs` change actually matches what the CLI emits, since fixture tests only catch drift from *known* shapes:
   1. Run the CLI command by hand with the exact same args your Rust code constructs, e.g. `src-tauri/binaries/omnideck-<your-triple> add --name test --port 46177 --json`, and diff the output against what your Rust structs expect.
   2. For anything destructive (`remove`, or actions against instances you care about), test against a disposable instance you create and remove yourself, or a low-stakes existing one — never a production Deck. `omnideck list --json` shows what's currently installed before you touch anything.
